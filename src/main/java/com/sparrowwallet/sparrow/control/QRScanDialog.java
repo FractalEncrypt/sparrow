@@ -71,6 +71,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private final LegacyURDecoder legacyUrDecoder;
     private final BBQRDecoder bbqrDecoder;
     private final WebcamService webcamService;
+    private final String expectedUrType;
     private List<String> parts;
 
     private QRScanDialog.Result result;
@@ -88,6 +89,14 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private boolean postOpenUpdate;
 
     public QRScanDialog() {
+        this(null);
+    }
+
+    public QRScanDialog(String expectedUrType) {
+        if(expectedUrType != null && !UR.isURType(expectedUrType)) {
+            throw new IllegalArgumentException("Invalid expected UR type");
+        }
+        this.expectedUrType = expectedUrType;
         this.urDecoder = new URDecoder();
         this.legacyUrDecoder = new LegacyURDecoder();
         this.bbqrDecoder = new BBQRDecoder();
@@ -429,6 +438,12 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
         }
 
         private Result extractResultFromUR(UR ur) {
+            if(expectedUrType != null) {
+                if(!expectedUrType.equals(ur.getType())) {
+                    return new Result(new URException("Expected ur:" + expectedUrType + " but received ur:" + ur.getType()));
+                }
+                return new Result(ur);
+            }
             try {
                 RegistryType urRegistryType = ur.getRegistryType();
 
@@ -822,6 +837,25 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
         public final DeterministicSeed seed;
         public final String payload;
         public final Throwable exception;
+        private UR ur;
+
+        public Result(UR ur) {
+            this.transaction = null;
+            this.psbt = null;
+            this.uri = null;
+            this.extendedKey = null;
+            this.extendedKeyName = null;
+            this.outputDescriptor = null;
+            this.wallets = null;
+            this.seed = null;
+            this.payload = null;
+            this.exception = null;
+            this.ur = ur;
+        }
+
+        public UR getUr() {
+            return ur;
+        }
 
         public Result(Transaction transaction) {
             this.transaction = transaction;

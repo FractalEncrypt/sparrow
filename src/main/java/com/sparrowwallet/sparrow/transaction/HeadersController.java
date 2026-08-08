@@ -1,8 +1,10 @@
 package com.sparrowwallet.sparrow.transaction;
 
 import com.sparrowwallet.drongo.KeyPurpose;
+import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.SecureString;
 import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.antiexfil.*;
 import com.sparrowwallet.drongo.address.Address;
 import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.protocol.*;
@@ -230,6 +232,9 @@ public class HeadersController extends TransactionFormController implements Init
 
     @FXML
     private Button signButton;
+
+    @FXML
+    private Button antiExfilButton;
 
     @FXML
     private HBox broadcastButtonBox;
@@ -481,6 +486,7 @@ public class HeadersController extends TransactionFormController implements Init
 
         signaturesForm.managedProperty().bind(signaturesForm.visibleProperty());
         signButtonBox.managedProperty().bind(signButtonBox.visibleProperty());
+        antiExfilButton.managedProperty().bind(antiExfilButton.visibleProperty());
         broadcastButtonBox.managedProperty().bind(broadcastButtonBox.visibleProperty());
 
         signaturesProgressBar.managedProperty().bind(signaturesProgressBar.visibleProperty());
@@ -574,6 +580,8 @@ public class HeadersController extends TransactionFormController implements Init
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
             initializeSignButton(signingWallet);
+            antiExfilButton.setVisible(signingWallet != null && signingWallet.getKeystores().stream()
+                    .anyMatch(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER));
             updateSignedKeystores(signingWallet);
 
             int threshold = signingWallet.getDefaultPolicy().getNumSignaturesRequired();
@@ -1048,6 +1056,99 @@ public class HeadersController extends TransactionFormController implements Init
             } else {
                 AppServices.showErrorDialog("Invalid QR Code", "Cannot parse QR code into a transaction or seed.");
             }
+        }
+    }
+
+    public void signAntiExfil(ActionEvent event) {
+        Wallet wallet = headersForm.getSigningWallet();
+        if(wallet == null || headersForm.getPsbt() == null) {
+            showErrorDialog("Anti-exfil signing unavailable", "A signing wallet and PSBT are required.");
+            return;
+        }
+        List<KeystoreChoice> choices = wallet.getKeystores().stream()
+                .filter(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER)
+                .map(KeystoreChoice::new).toList();
+        if(choices.isEmpty()) {
+            showErrorDialog("Anti-exfil signing unavailable", "The signing wallet has no SeedSigner keystore.");
+            return;
+        }
+        Keystore keystore;
+        if(choices.size() == 1) {
+            keystore = choices.getFirst().keystore();
+        } else {
+            ChoiceDialog<KeystoreChoice> choiceDialog = new ChoiceDialog<>(choices.getFirst(), choices);
+            choiceDialog.setTitle("Anti-exfil signing");
+            choiceDialog.setHeaderText("Select the SeedSigner keystore for this protected signing session");
+            choiceDialog.initOwner(antiExfilButton.getScene().getWindow());
+            Optional<KeystoreChoice> selected = choiceDialog.showAndWait();
+            if(selected.isEmpty()) return;
+            keystore = selected.get().keystore();
+        }
+
+        try {
+            byte[] original = headersForm.getPsbt().serialize();
+            String psbtId = Utils.bytesToHex(Sha256Hash.hash(original));
+            Storage storage = headersForm.getAvailableWallets().get(wallet);
+            if(storage == null) throw new IllegalStateException("Signing wallet storage is unavailable");
+            String walletId = storage.getWalletId(wallet);
+            String walletDirectory = Utils.bytesToHex(Sha256Hash.hash(walletId.getBytes(StandardCharsets.UTF_8))).substring(0, 32);
+            String keystoreDirectory = Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(keystore));
+            java.nio.file.Path directory = Storage.getStateDir().toPath().resolve("anti-exfil")
+                    .resolve("sessions").resolve(walletDirectory).resolve(keystoreDirectory);
+            java.nio.file.Path sessionPath = directory.resolve(psbtId + ".aexs");
+            java.nio.file.Path journalPath = Storage.getStateDir().toPath().resolve("anti-exfil")
+                    .resolve("journals").resolve(keystoreDirectory + ".aexj");
+            AntiExfilNetwork network = antiExfilNetwork();
+
+            AntiExfilCoordinator coordinator;
+            if(java.nio.file.Files.exists(sessionPath)) {
+                coordinator = AntiExfilCoordinator.load(sessionPath, journalPath, keystore);
+            } else {
+                try {
+                    coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network);
+                } catch(AntiExfilException exception) {
+                    if(exception.getCode() != AntiExfilException.Code.RETRY_CONFLICT) throw exception;
+                    Optional<ButtonType> acknowledgement = AppServices.showWarningDialog(
+                            "Selective-abort history exists",
+                            "This wallet key has an incomplete post-reveal signing history. Prefer retrying the retained session. "
+                                    + "Starting a fresh challenge can contribute to nonce-bias leakage. Continue only if you understand this risk.",
+                            ButtonType.NO, ButtonType.YES);
+                    if(acknowledgement.isEmpty() || acknowledgement.get() != ButtonType.YES) return;
+                    coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network, true);
+                }
+            }
+
+            AntiExfilSigningFlow.Result result = AntiExfilSigningFlow.execute(coordinator, network,
+                    new AntiExfilQrExchange(antiExfilButton.getScene().getWindow()));
+            if(result.outcome() == AntiExfilSigningFlow.Outcome.COMPLETE && result.completion() != null) {
+                if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
+                PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);
+                EventManager.get().post(new ViewPSBTEvent(antiExfilButton.getScene().getWindow(), null, null,
+                        signed, headersForm.getPsbt()));
+            }
+        } catch(Exception exception) {
+            log.error("Anti-exfil signing failed", exception);
+            String detail = exception instanceof AntiExfilException antiExfilException
+                    ? antiExfilException.getCode() + ": " + antiExfilException.getMessage()
+                    : exception.getMessage();
+            showErrorDialog("Protected signing stopped", detail == null ? "The anti-exfil ceremony failed closed." : detail);
+        }
+    }
+
+    private static AntiExfilNetwork antiExfilNetwork() {
+        return switch(Network.get()) {
+            case MAINNET -> AntiExfilNetwork.MAINNET;
+            case TESTNET -> AntiExfilNetwork.TESTNET3;
+            case TESTNET4 -> AntiExfilNetwork.TESTNET4;
+            case REGTEST -> AntiExfilNetwork.REGTEST;
+            case SIGNET -> AntiExfilNetwork.SIGNET;
+        };
+    }
+
+    private record KeystoreChoice(Keystore keystore) {
+        @Override
+        public String toString() {
+            return keystore.getLabel() + " (" + keystore.getKeyDerivation().getMasterFingerprint() + ")";
         }
     }
 
