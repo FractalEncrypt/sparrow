@@ -580,8 +580,14 @@ public class HeadersController extends TransactionFormController implements Init
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
             initializeSignButton(signingWallet);
-            antiExfilButton.setVisible(signingWallet != null && signingWallet.getKeystores().stream()
-                    .anyMatch(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER));
+            boolean hasSeedSigner = signingWallet != null && signingWallet.getKeystores().stream()
+                    .anyMatch(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER);
+            boolean antiExfilRequired = signingWallet != null && signingWallet.getKeystores().stream()
+                    .anyMatch(Keystore::isAntiExfilRequired);
+            antiExfilButton.setVisible(hasSeedSigner);
+            antiExfilButton.setText(antiExfilRequired ? "Protected QR (Required)" : "Protected QR");
+            antiExfilButton.setDefaultButton(antiExfilRequired);
+            signButton.setDefaultButton(!antiExfilRequired);
             updateSignedKeystores(signingWallet);
 
             int threshold = signingWallet.getDefaultPolicy().getNumSignaturesRequired();
@@ -1065,8 +1071,7 @@ public class HeadersController extends TransactionFormController implements Init
             showErrorDialog("Anti-exfil signing unavailable", "A signing wallet and PSBT are required.");
             return;
         }
-        List<KeystoreChoice> choices = wallet.getKeystores().stream()
-                .filter(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER)
+        List<KeystoreChoice> choices = getAntiExfilKeystores(wallet).stream()
                 .map(KeystoreChoice::new).toList();
         if(choices.isEmpty()) {
             showErrorDialog("Anti-exfil signing unavailable", "The signing wallet has no SeedSigner keystore.");
@@ -1124,7 +1129,7 @@ public class HeadersController extends TransactionFormController implements Init
                 if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
                 PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);
                 EventManager.get().post(new ViewPSBTEvent(antiExfilButton.getScene().getWindow(), null, null,
-                        signed, headersForm.getPsbt()));
+                        signed, headersForm.getPsbt(), TransactionView.HEADERS, null, true));
             }
         } catch(Exception exception) {
             log.error("Anti-exfil signing failed", exception);
@@ -1143,6 +1148,16 @@ public class HeadersController extends TransactionFormController implements Init
             case REGTEST -> AntiExfilNetwork.REGTEST;
             case SIGNET -> AntiExfilNetwork.SIGNET;
         };
+    }
+
+    static List<Keystore> getAntiExfilKeystores(Wallet wallet) {
+        List<Keystore> seedSigners = wallet.getKeystores().stream()
+                .filter(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER)
+                .toList();
+        boolean requiredPolicy = seedSigners.stream().anyMatch(Keystore::isAntiExfilRequired);
+        return seedSigners.stream()
+                .filter(keystore -> !requiredPolicy || keystore.isAntiExfilRequired())
+                .toList();
     }
 
     private record KeystoreChoice(Keystore keystore) {

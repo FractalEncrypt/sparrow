@@ -419,6 +419,13 @@ public class DbPersistence implements Persistence {
                     }
                 }
 
+                if(!dirtyPersistables.antiExfilPolicyKeystores.isEmpty()) {
+                    KeystoreDao keystoreDao = handle.attach(KeystoreDao.class);
+                    for(Keystore keystore : dirtyPersistables.antiExfilPolicyKeystores) {
+                        keystoreDao.updateAntiExfilRequired(keystore.isAntiExfilRequired(), keystore.getId());
+                    }
+                }
+
                 dirtyPersistablesMap.remove(wallet);
             } finally {
                 walletDao.setSchema(DEFAULT_SCHEMA);
@@ -1060,6 +1067,13 @@ public class DbPersistence implements Persistence {
     }
 
     @Subscribe
+    public void keystoreAntiExfilPoliciesChanged(KeystoreAntiExfilPoliciesChangedEvent event) {
+        if(persistsFor(event.getWallet())) {
+            updateExecutor.execute(() -> dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).antiExfilPolicyKeystores.addAll(event.getChangedKeystores()));
+        }
+    }
+
+    @Subscribe
     public void walletWatchLastChanged(WalletWatchLastChangedEvent event) {
         if(persistsFor(event.getWallet())) {
             updateExecutor.execute(() -> dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).watchLast = event.getWatchLast());
@@ -1091,6 +1105,7 @@ public class DbPersistence implements Persistence {
         public final List<Keystore> labelKeystores = new ArrayList<>();
         public final List<Keystore> encryptionKeystores = new ArrayList<>();
         public final List<Keystore> registrationKeystores = new ArrayList<>();
+        public final List<Keystore> antiExfilPolicyKeystores = new ArrayList<>();
         public boolean silentPaymentAddresses;
 
         public String toString() {
@@ -1114,6 +1129,7 @@ public class DbPersistence implements Persistence {
                     "\nKeystore labels:" + labelKeystores.stream().map(Keystore::getLabel).collect(Collectors.toList()) +
                     "\nKeystore encryptions:" + encryptionKeystores.stream().map(Keystore::getLabel).collect(Collectors.toList()) +
                     "\nKeystore registrations:" + registrationKeystores.stream().map(Keystore::getDeviceRegistration).collect(Collectors.toList()) +
+                    "\nKeystore anti-exfil policies:" + antiExfilPolicyKeystores.stream().map(Keystore::isAntiExfilRequired).collect(Collectors.toList()) +
                     "\nSilent payment addresses:" + silentPaymentAddresses;
         }
     }

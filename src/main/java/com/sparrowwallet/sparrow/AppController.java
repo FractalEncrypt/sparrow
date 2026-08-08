@@ -28,6 +28,7 @@ import com.sparrowwallet.sparrow.paynym.PayNymDialog;
 import com.sparrowwallet.sparrow.transaction.TransactionController;
 import com.sparrowwallet.sparrow.transaction.TransactionData;
 import com.sparrowwallet.sparrow.transaction.TransactionView;
+import com.sparrowwallet.sparrow.transaction.AntiExfilPolicy;
 import com.sparrowwallet.sparrow.wallet.Entry;
 import com.sparrowwallet.sparrow.wallet.WalletController;
 import com.sparrowwallet.sparrow.wallet.WalletForm;
@@ -3265,7 +3266,8 @@ public class AppController implements Initializable {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
             if(event.getBlockTransaction() != null) {
                 addTransactionTab(event.getBlockTransaction(), event.getInitialView(), event.getInitialIndex());
-            } else if(verifyTransactionContext(event.getContextPsbt(), event.getTransaction(), null, "scanned")) {
+            } else if(!violatesAntiExfilPolicy(event.getContextPsbt(), event.getTransaction(), null, false)
+                    && verifyTransactionContext(event.getContextPsbt(), event.getTransaction(), null, "scanned")) {
                 addTransactionTab(event.getTransaction(), event.getInitialView(), event.getInitialIndex());
             }
         }
@@ -3274,10 +3276,39 @@ public class AppController implements Initializable {
     @Subscribe
     public void viewPSBT(ViewPSBTEvent event) {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
-            if(verifyTransactionContext(event.getContextPsbt(), null, event.getPsbt(), "scanned")) {
+            if(!violatesAntiExfilPolicy(event.getContextPsbt(), null, event.getPsbt(), event.isAntiExfilVerified())
+                    && verifyTransactionContext(event.getContextPsbt(), null, event.getPsbt(), "scanned")) {
                 addTransactionTab(event.getLabel(), event.getFile(), event.getPsbt());
             }
         }
+    }
+
+    private boolean violatesAntiExfilPolicy(PSBT contextPsbt, Transaction transaction, PSBT psbt, boolean antiExfilVerified) {
+        if(antiExfilVerified) return false;
+        Optional<Wallet> signingWallet = AppServices.get().getOpenWallets().keySet().stream()
+                .filter(wallet -> contextPsbt != null ? wallet.canSign(contextPsbt)
+                        : transaction != null ? wallet.canSign(transaction)
+                        : psbt != null && wallet.canSign(psbt))
+                .findFirst();
+        if(signingWallet.isEmpty()) return false;
+        if(signingWallet.get().getKeystores().stream().noneMatch(Keystore::isAntiExfilRequired)) return false;
+        boolean violation;
+        try {
+            violation = transaction != null
+                    ? AntiExfilPolicy.hasRequiredSignature(signingWallet.get(), transaction)
+                    : psbt != null && AntiExfilPolicy.hasRequiredSignature(signingWallet.get(), psbt);
+        } catch(RuntimeException exception) {
+            log.warn("Could not attribute returned signatures for required anti-exfil policy", exception);
+            AppServices.showErrorDialog("Protected signature rejected",
+                    "Sparrow could not verify that the returned signatures satisfy the required anti-exfil policy.");
+            return true;
+        }
+        if(violation) {
+            AppServices.showErrorDialog("Protected signature rejected",
+                    "This transaction contains a signature from a keystore that requires anti-exfil signing. "
+                            + "Complete that signature with the Protected QR action instead.");
+        }
+        return violation;
     }
 
     @Subscribe

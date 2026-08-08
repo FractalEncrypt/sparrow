@@ -92,6 +92,11 @@ public class SettingsWalletForm extends WalletForm {
                 EventManager.get().post(new KeystoreLabelsChangedEvent(wallet, pastWallet, getWalletId(), labelChangedKeystores));
             }
 
+            List<Keystore> antiExfilPolicyChangedKeystores = getAntiExfilPolicyChangedKeystores(wallet, walletCopy);
+            if(!antiExfilPolicyChangedKeystores.isEmpty()) {
+                EventManager.get().post(new KeystoreAntiExfilPoliciesChangedEvent(wallet, pastWallet, getWalletId(), antiExfilPolicyChangedKeystores));
+            }
+
             if(!Objects.equals(wallet.getWatchLast(), walletCopy.getWatchLast())) {
                 EventManager.get().post(new WalletWatchLastChangedEvent(wallet, pastWallet, getWalletId(), walletCopy.getWatchLast()));
             }
@@ -113,7 +118,7 @@ public class SettingsWalletForm extends WalletForm {
                 }
             }
 
-            if(labelChangedKeystores.isEmpty() && encryptionChangedKeystores.isEmpty()) {
+            if(labelChangedKeystores.isEmpty() && antiExfilPolicyChangedKeystores.isEmpty() && encryptionChangedKeystores.isEmpty()) {
                 //Can only be a wallet password change on a wallet without private keys
                 EventManager.get().post(new WalletPasswordChangedEvent(wallet, pastWallet, getWalletId()));
             }
@@ -214,6 +219,21 @@ public class SettingsWalletForm extends WalletForm {
 
             if(!Objects.equals(originalKeystore.getLabel(), changedKeystore.getLabel())) {
                 originalKeystore.setLabel(changedKeystore.getLabel());
+                changedKeystores.add(originalKeystore);
+            }
+        }
+
+        return changedKeystores;
+    }
+
+    private List<Keystore> getAntiExfilPolicyChangedKeystores(Wallet original, Wallet changed) {
+        List<Keystore> changedKeystores = new ArrayList<>();
+        for(int i = 0; i < original.getKeystores().size(); i++) {
+            Keystore originalKeystore = original.getKeystores().get(i);
+            Keystore changedKeystore = changed.getKeystores().get(i);
+
+            if(originalKeystore.isAntiExfilRequired() != changedKeystore.isAntiExfilRequired()) {
+                originalKeystore.setAntiExfilRequired(changedKeystore.isAntiExfilRequired());
                 changedKeystores.add(originalKeystore);
             }
         }

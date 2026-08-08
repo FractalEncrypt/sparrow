@@ -184,4 +184,22 @@ public class DbPersistenceTest {
 
         Assertions.assertTrue(new Storage(PersistenceType.DB, storage.getWalletFile()).loadUnencryptedWallet().getWallet().isValid());
     }
+
+    @Test
+    public void antiExfilPolicyRoundTripsThroughDatabase() throws Exception {
+        Wallet wallet = createWallet("Protected");
+        Keystore keystore = wallet.getKeystores().getFirst();
+        keystore.setWalletModel(WalletModel.SEEDSIGNER);
+        keystore.setAntiExfilRequired(true);
+
+        Storage storage = new Storage(PersistenceType.DB, tempDir.resolve("Protected." + PersistenceType.DB.getExtension()).toFile());
+        storage.setKeyDeriver(new Argon2KeyDeriver());
+        storage.setEncryptionPubKey(Storage.NO_PASSWORD_KEY);
+        storage.saveWallet(wallet);
+        storage.closeAndWait();
+
+        Wallet restored = new Storage(PersistenceType.DB, storage.getWalletFile()).loadUnencryptedWallet().getWallet();
+        Assertions.assertTrue(restored.getKeystores().getFirst().isAntiExfilRequired());
+        Assertions.assertEquals(WalletModel.SEEDSIGNER, restored.getKeystores().getFirst().getWalletModel());
+    }
 }
