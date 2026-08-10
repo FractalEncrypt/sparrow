@@ -1091,7 +1091,7 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         try {
-            byte[] original = headersForm.getPsbt().serialize();
+            byte[] original = getAntiExfilPsbtBytes(headersForm.getPsbt());
             String psbtId = Utils.bytesToHex(Sha256Hash.hash(original));
             Storage storage = headersForm.getAvailableWallets().get(wallet);
             if(storage == null) throw new IllegalStateException("Signing wallet storage is unavailable");
@@ -1158,6 +1158,11 @@ public class HeadersController extends TransactionFormController implements Init
         return seedSigners.stream()
                 .filter(keystore -> !requiredPolicy || keystore.isAntiExfilRequired())
                 .toList();
+    }
+
+    static byte[] getAntiExfilPsbtBytes(PSBT psbt) {
+        if(psbt == null) throw new IllegalArgumentException("A PSBT is required");
+        return psbt.getForExport().serialize();
     }
 
     private record KeystoreChoice(Keystore keystore) {

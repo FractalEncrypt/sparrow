@@ -4,6 +4,7 @@
 build
 /*.properties
 out
+/run/
 *.log
 build-*.sh
 .DS_Store
