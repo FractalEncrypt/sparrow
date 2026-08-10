@@ -23,6 +23,7 @@ import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.wallet.BlockTransaction;
 import com.sparrowwallet.drongo.wallet.BlockTransactionHashIndex;
+import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
 import com.sparrowwallet.drongo.wallet.DeterministicSeed;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.MasterPrivateExtendedKey;
@@ -384,6 +385,7 @@ public class JsonPersistence implements Persistence {
 
         if(includeWalletSerializers) {
             gsonBuilder.registerTypeAdapter(Keystore.class, new KeystoreSerializer());
+            gsonBuilder.registerTypeAdapter(Keystore.class, new KeystoreDeserializer());
             gsonBuilder.registerTypeAdapter(WalletNode.class, new NodeSerializer());
             gsonBuilder.registerTypeAdapter(WalletNode.class, new NodeDeserializer());
         }
@@ -577,6 +579,21 @@ public class JsonPersistence implements Persistence {
             }
 
             return jsonObject;
+        }
+    }
+
+    private static class KeystoreDeserializer implements JsonDeserializer<Keystore> {
+        @Override
+        public Keystore deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            JsonObject jsonObject = json.getAsJsonObject();
+            Keystore keystore = getGson(false).fromJson(jsonObject, typeOfT);
+            if(!jsonObject.has("antiExfilPolicy")) {
+                boolean legacyRequired = jsonObject.has("antiExfilRequired") && jsonObject.get("antiExfilRequired").getAsBoolean();
+                keystore.setAntiExfilPolicy(legacyRequired ? AntiExfilKeystorePolicy.REQUIRED
+                        : keystore.getWalletModel() == com.sparrowwallet.drongo.wallet.WalletModel.SEEDSIGNER
+                        ? AntiExfilKeystorePolicy.OPTIONAL : AntiExfilKeystorePolicy.UNSUPPORTED);
+            }
+            return keystore;
         }
     }
 

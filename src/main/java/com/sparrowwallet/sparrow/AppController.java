@@ -3291,7 +3291,7 @@ public class AppController implements Initializable {
                         : psbt != null && wallet.canSign(psbt))
                 .findFirst();
         if(signingWallet.isEmpty()) return false;
-        if(signingWallet.get().getKeystores().stream().noneMatch(Keystore::isAntiExfilRequired)) return false;
+        if(!AntiExfilPolicy.requiresProtectedSigning(signingWallet.get())) return false;
         boolean violation;
         try {
             violation = transaction != null

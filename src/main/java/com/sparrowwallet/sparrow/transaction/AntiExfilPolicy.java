@@ -9,6 +9,10 @@ public final class AntiExfilPolicy {
     private AntiExfilPolicy() {
     }
 
+    public static boolean requiresProtectedSigning(Wallet wallet) {
+        return wallet != null && wallet.getKeystores().stream().anyMatch(Keystore::isAntiExfilRequired);
+    }
+
     public static boolean hasRequiredSignature(Wallet wallet, PSBT psbt) {
         return wallet.getSignedKeystores(psbt).values().stream()
                 .flatMap(signatures -> signatures.values().stream())

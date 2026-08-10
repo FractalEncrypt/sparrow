@@ -9,6 +9,7 @@ import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import com.sparrowwallet.drongo.wallet.Keystore;
+import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
 import com.sparrowwallet.drongo.wallet.KeystoreSource;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
@@ -23,6 +24,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.sql.ResultSet;
 import java.util.Comparator;
 
 public class DbPersistenceTest {
@@ -189,8 +191,8 @@ public class DbPersistenceTest {
     public void antiExfilPolicyRoundTripsThroughDatabase() throws Exception {
         Wallet wallet = createWallet("Protected");
         Keystore keystore = wallet.getKeystores().getFirst();
-        keystore.setWalletModel(WalletModel.SEEDSIGNER);
-        keystore.setAntiExfilRequired(true);
+        keystore.setWalletModel(WalletModel.SPECTER_DIY);
+        keystore.setAntiExfilPolicy(AntiExfilKeystorePolicy.REQUIRED);
 
         Storage storage = new Storage(PersistenceType.DB, tempDir.resolve("Protected." + PersistenceType.DB.getExtension()).toFile());
         storage.setKeyDeriver(new Argon2KeyDeriver());
@@ -200,6 +202,30 @@ public class DbPersistenceTest {
 
         Wallet restored = new Storage(PersistenceType.DB, storage.getWalletFile()).loadUnencryptedWallet().getWallet();
         Assertions.assertTrue(restored.getKeystores().getFirst().isAntiExfilRequired());
-        Assertions.assertEquals(WalletModel.SEEDSIGNER, restored.getKeystores().getFirst().getWalletModel());
+        Assertions.assertEquals(AntiExfilKeystorePolicy.REQUIRED, restored.getKeystores().getFirst().getAntiExfilPolicy());
+        Assertions.assertEquals(WalletModel.SPECTER_DIY, restored.getKeystores().getFirst().getWalletModel());
+    }
+
+    @Test
+    public void legacyAntiExfilPolicyMigrationPreservesSeedSignerAndRequiredStates() throws Exception {
+        Assertions.assertEquals(18, WalletModel.SEEDSIGNER.ordinal(), "Update V12 migration if WalletModel ordering changes");
+        try(Connection connection = DriverManager.getConnection("jdbc:h2:mem:aex-v12;DB_CLOSE_DELAY=-1")) {
+            try(Statement statement = connection.createStatement()) {
+                statement.execute("create table keystore(walletModel integer, antiExfilRequired boolean not null)");
+                statement.execute("insert into keystore values (18, false), (14, true), (14, false)");
+                String migration = Files.readString(Path.of("src/main/resources/com/sparrowwallet/sparrow/sql/V12__DeviceNeutralAntiExfilPolicy.sql"));
+                for(String sql : migration.split(";")) {
+                    if(!sql.isBlank()) statement.execute(sql);
+                }
+                try(ResultSet resultSet = statement.executeQuery("select antiExfilPolicy from keystore order by walletModel desc, antiExfilRequired desc")) {
+                    Assertions.assertTrue(resultSet.next());
+                    Assertions.assertEquals(AntiExfilKeystorePolicy.OPTIONAL.ordinal(), resultSet.getInt(1));
+                    Assertions.assertTrue(resultSet.next());
+                    Assertions.assertEquals(AntiExfilKeystorePolicy.REQUIRED.ordinal(), resultSet.getInt(1));
+                    Assertions.assertTrue(resultSet.next());
+                    Assertions.assertEquals(AntiExfilKeystorePolicy.UNSUPPORTED.ordinal(), resultSet.getInt(1));
+                }
+            }
+        }
     }
 }

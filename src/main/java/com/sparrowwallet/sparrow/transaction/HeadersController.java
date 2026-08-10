@@ -580,11 +580,11 @@ public class HeadersController extends TransactionFormController implements Init
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
             initializeSignButton(signingWallet);
-            boolean hasSeedSigner = signingWallet != null && signingWallet.getKeystores().stream()
-                    .anyMatch(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER);
+            boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
+                    .anyMatch(Keystore::supportsAntiExfil);
             boolean antiExfilRequired = signingWallet != null && signingWallet.getKeystores().stream()
                     .anyMatch(Keystore::isAntiExfilRequired);
-            antiExfilButton.setVisible(hasSeedSigner);
+            antiExfilButton.setVisible(hasAntiExfilKeystore);
             antiExfilButton.setText(antiExfilRequired ? "Protected QR (Required)" : "Protected QR");
             antiExfilButton.setDefaultButton(antiExfilRequired);
             signButton.setDefaultButton(!antiExfilRequired);
@@ -1074,7 +1074,7 @@ public class HeadersController extends TransactionFormController implements Init
         List<KeystoreChoice> choices = getAntiExfilKeystores(wallet).stream()
                 .map(KeystoreChoice::new).toList();
         if(choices.isEmpty()) {
-            showErrorDialog("Anti-exfil signing unavailable", "The signing wallet has no SeedSigner keystore.");
+            showErrorDialog("Anti-exfil signing unavailable", "The signing wallet has no compatible protected-signing keystore.");
             return;
         }
         Keystore keystore;
@@ -1083,7 +1083,7 @@ public class HeadersController extends TransactionFormController implements Init
         } else {
             ChoiceDialog<KeystoreChoice> choiceDialog = new ChoiceDialog<>(choices.getFirst(), choices);
             choiceDialog.setTitle("Anti-exfil signing");
-            choiceDialog.setHeaderText("Select the SeedSigner keystore for this protected signing session");
+            choiceDialog.setHeaderText("Select the compatible keystore for this protected signing session");
             choiceDialog.initOwner(antiExfilButton.getScene().getWindow());
             Optional<KeystoreChoice> selected = choiceDialog.showAndWait();
             if(selected.isEmpty()) return;
@@ -1151,11 +1151,11 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     static List<Keystore> getAntiExfilKeystores(Wallet wallet) {
-        List<Keystore> seedSigners = wallet.getKeystores().stream()
-                .filter(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER)
+        List<Keystore> supportedKeystores = wallet.getKeystores().stream()
+                .filter(Keystore::supportsAntiExfil)
                 .toList();
-        boolean requiredPolicy = seedSigners.stream().anyMatch(Keystore::isAntiExfilRequired);
-        return seedSigners.stream()
+        boolean requiredPolicy = supportedKeystores.stream().anyMatch(Keystore::isAntiExfilRequired);
+        return supportedKeystores.stream()
                 .filter(keystore -> !requiredPolicy || keystore.isAntiExfilRequired())
                 .toList();
     }

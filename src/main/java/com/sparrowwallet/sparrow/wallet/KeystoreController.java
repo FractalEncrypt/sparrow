@@ -115,7 +115,7 @@ public class KeystoreController extends WalletFormController implements Initiali
     private Field antiExfilPolicyField;
 
     @FXML
-    private CheckBox requireAntiExfil;
+    private ComboBox<AntiExfilKeystorePolicy> antiExfilPolicy;
 
     private final ValidationSupport validationSupport = new ValidationSupport();
 
@@ -165,9 +165,11 @@ public class KeystoreController extends WalletFormController implements Initiali
 
         antiExfilPolicyField.managedProperty().bind(antiExfilPolicyField.visibleProperty());
         updateAntiExfilPolicy();
-        requireAntiExfil.setSelected(keystore.isAntiExfilRequired());
-        requireAntiExfil.selectedProperty().addListener((observable, oldValue, required) -> {
-            keystore.setAntiExfilRequired(required);
+        antiExfilPolicy.getItems().setAll(AntiExfilKeystorePolicy.values());
+        antiExfilPolicy.setValue(keystore.getAntiExfilPolicy());
+        antiExfilPolicy.valueProperty().addListener((observable, oldValue, policy) -> {
+            if(policy == null) return;
+            keystore.setAntiExfilPolicy(policy);
             EventManager.get().post(new SettingsChangedEvent(walletForm.getWallet(), SettingsChangedEvent.Type.KEYSTORE_ANTI_EXFIL));
         });
 
@@ -390,7 +392,7 @@ public class KeystoreController extends WalletFormController implements Initiali
 
     private void updateAntiExfilPolicy() {
         if(antiExfilPolicyField != null) {
-            antiExfilPolicyField.setVisible(keystore.getWalletModel() == WalletModel.SEEDSIGNER);
+            antiExfilPolicyField.setVisible(keystore.getSource() == KeystoreSource.HW_AIRGAPPED || keystore.supportsAntiExfil());
         }
     }
 
@@ -473,11 +475,13 @@ public class KeystoreController extends WalletFormController implements Initiali
                     EventManager.get().post(new SettingsChangedEvent(walletForm.getWallet(), SettingsChangedEvent.Type.KEYSTORE_LABEL));
                 }
             }
-            boolean retainAntiExfilPolicy = importedKeystore.getWalletModel() == WalletModel.SEEDSIGNER
-                    && (keystore.isAntiExfilRequired() || importedKeystore.isAntiExfilRequired());
+            AntiExfilKeystorePolicy importedPolicy = importedKeystore.getAntiExfilPolicy();
+            if(keystore.isAntiExfilRequired() && importedPolicy.isSupported()) {
+                importedPolicy = AntiExfilKeystorePolicy.REQUIRED;
+            }
             keystore.setSource(importedKeystore.getSource());
             keystore.setWalletModel(importedKeystore.getWalletModel());
-            keystore.setAntiExfilRequired(retainAntiExfilPolicy);
+            keystore.setAntiExfilPolicy(importedPolicy);
             keystore.setLabel(importedKeystore.getLabel());
             keystore.setKeyDerivation(importedKeystore.getKeyDerivation());
             keystore.setExtendedPublicKey(importedKeystore.getExtendedPublicKey());
@@ -487,7 +491,7 @@ public class KeystoreController extends WalletFormController implements Initiali
             keystore.setSilentPaymentScanAddress(importedKeystore.getSilentPaymentScanAddress());
 
             updateType(keystore.isValid());
-            requireAntiExfil.setSelected(keystore.isAntiExfilRequired());
+            antiExfilPolicy.setValue(keystore.getAntiExfilPolicy());
             label.setText(keystore.getLabel());
             fingerprint.setText(keystore.getKeyDerivation().getMasterFingerprint());
             derivation.setText(keystore.getKeyDerivation().getDerivationPath());

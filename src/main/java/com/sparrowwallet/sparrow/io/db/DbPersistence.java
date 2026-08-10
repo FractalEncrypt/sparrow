@@ -422,7 +422,7 @@ public class DbPersistence implements Persistence {
                 if(!dirtyPersistables.antiExfilPolicyKeystores.isEmpty()) {
                     KeystoreDao keystoreDao = handle.attach(KeystoreDao.class);
                     for(Keystore keystore : dirtyPersistables.antiExfilPolicyKeystores) {
-                        keystoreDao.updateAntiExfilRequired(keystore.isAntiExfilRequired(), keystore.getId());
+                        keystoreDao.updateAntiExfilPolicy(keystore.isAntiExfilRequired(), keystore.getAntiExfilPolicy().ordinal(), keystore.getId());
                     }
                 }
 
@@ -1129,7 +1129,7 @@ public class DbPersistence implements Persistence {
                     "\nKeystore labels:" + labelKeystores.stream().map(Keystore::getLabel).collect(Collectors.toList()) +
                     "\nKeystore encryptions:" + encryptionKeystores.stream().map(Keystore::getLabel).collect(Collectors.toList()) +
                     "\nKeystore registrations:" + registrationKeystores.stream().map(Keystore::getDeviceRegistration).collect(Collectors.toList()) +
-                    "\nKeystore anti-exfil policies:" + antiExfilPolicyKeystores.stream().map(Keystore::isAntiExfilRequired).collect(Collectors.toList()) +
+                    "\nKeystore anti-exfil policies:" + antiExfilPolicyKeystores.stream().map(Keystore::getAntiExfilPolicy).collect(Collectors.toList()) +
                     "\nSilent payment addresses:" + silentPaymentAddresses;
         }
     }

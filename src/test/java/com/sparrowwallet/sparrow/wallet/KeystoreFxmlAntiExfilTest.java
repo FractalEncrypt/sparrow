@@ -44,6 +44,6 @@ class KeystoreFxmlAntiExfilTest {
         assertTrue(loaded.await(15, TimeUnit.SECONDS));
         assertNull(failure.get(), failure.get() == null ? null : failure.get().toString());
         assertNotNull(root.get());
-        assertNotNull(root.get().lookup("#requireAntiExfil"));
+        assertNotNull(root.get().lookup("#antiExfilPolicy"));
     }
 }

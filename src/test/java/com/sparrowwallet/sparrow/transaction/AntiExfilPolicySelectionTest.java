@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import com.sparrowwallet.drongo.Utils;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilPsbt;
 import com.sparrowwallet.drongo.wallet.Keystore;
+import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
 import com.sparrowwallet.drongo.psbt.PSBT;
@@ -26,27 +27,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AntiExfilPolicySelectionTest {
     @Test
-    void requiredSeedSignerCannotSilentlyFallBackToOptionalSigner() {
+    void requiredCompatibleSignerCannotSilentlyFallBackToOptionalSigner() {
         Wallet wallet = new Wallet("test");
-        Keystore required = seedSigner("Required", true);
-        Keystore optional = seedSigner("Optional", false);
-        wallet.getKeystores().addAll(List.of(required, optional));
+        Keystore required = compatible("Required", WalletModel.SPECTER_DIY, AntiExfilKeystorePolicy.REQUIRED);
+        Keystore optional = compatible("Optional", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
+        Keystore unsupported = compatible("Unsupported", WalletModel.PASSPORT, AntiExfilKeystorePolicy.UNSUPPORTED);
+        wallet.getKeystores().addAll(List.of(required, optional, unsupported));
 
         assertEquals(List.of(required), HeadersController.getAntiExfilKeystores(wallet));
 
-        required.setAntiExfilRequired(false);
+        required.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
         assertEquals(List.of(required, optional), HeadersController.getAntiExfilKeystores(wallet));
     }
 
     @Test
     void returnedRequiredSignatureNeedsProtectedProvenance() {
-        Keystore required = seedSigner("Required", true);
-        Keystore optional = seedSigner("Optional", false);
+        Keystore required = compatible("Required", WalletModel.SPECTER_DIY, AntiExfilKeystorePolicy.REQUIRED);
+        Keystore optional = compatible("Optional", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
         AttributedWallet wallet = new AttributedWallet(required);
 
+        assertTrue(AntiExfilPolicy.requiresProtectedSigning(wallet));
         assertTrue(AntiExfilPolicy.hasRequiredSignature(wallet, (PSBT)null));
         wallet.signer = optional;
         assertFalse(AntiExfilPolicy.hasRequiredSignature(wallet, (PSBT)null));
+        required.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
+        assertFalse(AntiExfilPolicy.requiresProtectedSigning(wallet));
     }
 
     @Test
@@ -66,10 +71,10 @@ class AntiExfilPolicySelectionTest {
         assertArrayEquals(canonicalV0, exported);
     }
 
-    private static Keystore seedSigner(String label, boolean required) {
+    private static Keystore compatible(String label, WalletModel model, AntiExfilKeystorePolicy policy) {
         Keystore keystore = new Keystore(label);
-        keystore.setWalletModel(WalletModel.SEEDSIGNER);
-        keystore.setAntiExfilRequired(required);
+        keystore.setWalletModel(model);
+        keystore.setAntiExfilPolicy(policy);
         return keystore;
     }
 
@@ -79,6 +84,7 @@ class AntiExfilPolicySelectionTest {
         private AttributedWallet(Keystore signer) {
             super("test");
             this.signer = signer;
+            getKeystores().add(signer);
         }
 
         @Override
