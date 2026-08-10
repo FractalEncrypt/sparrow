@@ -67,7 +67,7 @@ import java.util.stream.IntStream;
 public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private static final Logger log = LoggerFactory.getLogger(QRScanDialog.class);
 
-    private final URDecoder urDecoder;
+    private URDecoder urDecoder;
     private final LegacyURDecoder legacyUrDecoder;
     private final BBQRDecoder bbqrDecoder;
     private final WebcamService webcamService;
@@ -253,7 +253,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                         }
                     }
                 } else {
-                    urDecoder.receivePart(qrtext);
+                    urDecoder = receiveUrPart(urDecoder, qrtext);
                     Platform.runLater(() -> percentComplete.setValue(urDecoder.getProcessedPartsCount() > 0 ? urDecoder.getEstimatedPercentComplete() : 0));
 
                     if(urDecoder.getResult() != null) {
@@ -750,6 +750,18 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                 return new Result(new URException("BBQR type " + result.getBbqrType() + " is not supported"));
             }
         }
+    }
+
+    static URDecoder receiveUrPart(URDecoder decoder, String qrtext) {
+        boolean accepted = decoder.receivePart(qrtext);
+        if(!accepted && decoder.getResult() == null && decoder.getProcessedPartsCount() <= 1) {
+            // Camera backends can deliver one buffered frame from the QR that was visible when
+            // the previous scanner closed. If the next live fragment conflicts immediately,
+            // prefer it before the stale fountain header can leave the decoder stuck.
+            URDecoder restarted = new URDecoder();
+            if(restarted.receivePart(qrtext)) return restarted;
+        }
+        return decoder;
     }
 
     private class QRScanDialogPane extends DialogPane {

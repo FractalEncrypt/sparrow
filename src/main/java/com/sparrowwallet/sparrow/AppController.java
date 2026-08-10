@@ -3295,8 +3295,8 @@ public class AppController implements Initializable {
         boolean violation;
         try {
             violation = transaction != null
-                    ? AntiExfilPolicy.hasRequiredSignature(signingWallet.get(), transaction)
-                    : psbt != null && AntiExfilPolicy.hasRequiredSignature(signingWallet.get(), psbt);
+                    ? AntiExfilPolicy.violatesRequiredPolicy(signingWallet.get(), contextPsbt, transaction)
+                    : psbt != null && AntiExfilPolicy.violatesRequiredPolicy(signingWallet.get(), contextPsbt, psbt);
         } catch(RuntimeException exception) {
             log.warn("Could not attribute returned signatures for required anti-exfil policy", exception);
             AppServices.showErrorDialog("Protected signature rejected",
