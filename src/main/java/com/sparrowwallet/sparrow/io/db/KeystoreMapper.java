@@ -28,6 +28,7 @@ public class KeystoreMapper implements RowMapper<Keystore> {
         keystore.setExternalPaymentCode(rs.getString("keystore.externalPaymentCode") == null ? null : PaymentCode.fromString(rs.getString("keystore.externalPaymentCode")));
         keystore.setSilentPaymentScanAddress(rs.getBytes("keystore.silentPaymentScanAddress") == null ? null : SilentPaymentScanAddress.fromBytes(rs.getBytes("keystore.silentPaymentScanAddress")));
         keystore.setDeviceRegistration(rs.getBytes("keystore.deviceRegistration"));
+        keystore.setAntiExfilPolicy(AntiExfilKeystorePolicy.values()[rs.getInt("keystore.antiExfilPolicy")]);
 
         if(rs.getBytes("masterPrivateExtendedKey.privateKey") != null) {
             MasterPrivateExtendedKey masterPrivateExtendedKey = new MasterPrivateExtendedKey(rs.getBytes("masterPrivateExtendedKey.privateKey"), rs.getBytes("masterPrivateExtendedKey.chainCode"));

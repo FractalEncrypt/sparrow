@@ -14,6 +14,7 @@ public class ViewPSBTEvent {
     private final PSBT contextPsbt;
     private final TransactionView initialView;
     private final Integer initialIndex;
+    private final boolean antiExfilVerified;
 
     public ViewPSBTEvent(Window window, String label, File file, PSBT psbt) {
         this(window, label, file, psbt, null, TransactionView.HEADERS, null);
@@ -28,6 +29,11 @@ public class ViewPSBTEvent {
     }
 
     public ViewPSBTEvent(Window window, String label, File file, PSBT psbt, PSBT contextPsbt, TransactionView initialView, Integer initialIndex) {
+        this(window, label, file, psbt, contextPsbt, initialView, initialIndex, false);
+    }
+
+    public ViewPSBTEvent(Window window, String label, File file, PSBT psbt, PSBT contextPsbt, TransactionView initialView,
+                         Integer initialIndex, boolean antiExfilVerified) {
         this.window = window;
         this.label = label;
         this.file = file;
@@ -35,6 +41,7 @@ public class ViewPSBTEvent {
         this.contextPsbt = contextPsbt;
         this.initialView = initialView;
         this.initialIndex = initialIndex;
+        this.antiExfilVerified = antiExfilVerified;
     }
 
     public Window getWindow() {
@@ -63,5 +70,9 @@ public class ViewPSBTEvent {
 
     public Integer getInitialIndex() {
         return initialIndex;
+    }
+
+    public boolean isAntiExfilVerified() {
+        return antiExfilVerified;
     }
 }

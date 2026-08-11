@@ -592,8 +592,14 @@ public class HeadersController extends TransactionFormController implements Init
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
             initializeSignButton(signingWallet);
-            antiExfilButton.setVisible(signingWallet != null && signingWallet.getKeystores().stream()
-                    .anyMatch(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER));
+            boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
+                    .anyMatch(Keystore::supportsAntiExfil);
+            boolean antiExfilRequired = signingWallet != null && signingWallet.getKeystores().stream()
+                    .anyMatch(Keystore::isAntiExfilRequired);
+            antiExfilButton.setVisible(hasAntiExfilKeystore);
+            antiExfilButton.setText(antiExfilRequired ? "Protected QR (Required)" : "Protected QR");
+            antiExfilButton.setDefaultButton(antiExfilRequired);
+            signButton.setDefaultButton(!antiExfilRequired);
             updateSignedKeystores(signingWallet);
 
             int threshold = signingWallet.getDefaultPolicy().getNumSignaturesRequired();
@@ -1186,11 +1192,10 @@ public class HeadersController extends TransactionFormController implements Init
             showErrorDialog("Anti-exfil signing unavailable", "A signing wallet and PSBT are required.");
             return;
         }
-        List<KeystoreChoice> choices = wallet.getKeystores().stream()
-                .filter(keystore -> keystore.getWalletModel() == WalletModel.SEEDSIGNER)
+        List<KeystoreChoice> choices = getAntiExfilKeystores(wallet).stream()
                 .map(KeystoreChoice::new).toList();
         if(choices.isEmpty()) {
-            showErrorDialog("Anti-exfil signing unavailable", "The signing wallet has no SeedSigner keystore.");
+            showErrorDialog("Anti-exfil signing unavailable", "The signing wallet has no compatible protected-signing keystore.");
             return;
         }
         Keystore keystore;
@@ -1199,7 +1204,7 @@ public class HeadersController extends TransactionFormController implements Init
         } else {
             ChoiceDialog<KeystoreChoice> choiceDialog = new ChoiceDialog<>(choices.getFirst(), choices);
             choiceDialog.setTitle("Anti-exfil signing");
-            choiceDialog.setHeaderText("Select the SeedSigner keystore for this protected signing session");
+            choiceDialog.setHeaderText("Select the compatible keystore for this protected signing session");
             choiceDialog.initOwner(antiExfilButton.getScene().getWindow());
             Optional<KeystoreChoice> selected = choiceDialog.showAndWait();
             if(selected.isEmpty()) return;
@@ -1245,7 +1250,7 @@ public class HeadersController extends TransactionFormController implements Init
                 if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
                 PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);
                 EventManager.get().post(new ViewPSBTEvent(antiExfilButton.getScene().getWindow(), null, null,
-                        signed, headersForm.getPsbt()));
+                        signed, headersForm.getPsbt(), TransactionView.HEADERS, null, true));
             }
         } catch(Exception exception) {
             log.error("Anti-exfil signing failed", exception);
@@ -1264,6 +1269,16 @@ public class HeadersController extends TransactionFormController implements Init
             case REGTEST -> AntiExfilNetwork.REGTEST;
             case SIGNET -> AntiExfilNetwork.SIGNET;
         };
+    }
+
+    static List<Keystore> getAntiExfilKeystores(Wallet wallet) {
+        List<Keystore> supportedKeystores = wallet.getKeystores().stream()
+                .filter(Keystore::supportsAntiExfil)
+                .toList();
+        boolean requiredPolicy = supportedKeystores.stream().anyMatch(Keystore::isAntiExfilRequired);
+        return supportedKeystores.stream()
+                .filter(keystore -> !requiredPolicy || keystore.isAntiExfilRequired())
+                .toList();
     }
 
     private record KeystoreChoice(Keystore keystore) {
