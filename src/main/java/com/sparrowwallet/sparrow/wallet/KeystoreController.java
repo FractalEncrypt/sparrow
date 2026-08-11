@@ -458,9 +458,14 @@ public class KeystoreController extends WalletFormController implements Initiali
         dlg.initOwner(selectSourcePane.getScene().getWindow());
         Optional<Keystore> result = dlg.showAndWait();
         if(result.isPresent()) {
-            selectSourcePane.setVisible(false);
-
             Keystore importedKeystore = result.get();
+            if(duplicatesAnotherKeystore(walletForm.getWallet(), keystore, importedKeystore)) {
+                AppServices.showErrorDialog("Duplicate Keystore",
+                        "This key is already present in another keystore. Scan the intended signer again.");
+                return;
+            }
+
+            selectSourcePane.setVisible(false);
             if(keystore.getSource() == KeystoreSource.SW_SEED && importedKeystore.getSource() != KeystoreSource.SW_SEED) {
                 Optional<ButtonType> optType = AppServices.showWarningDialog("Confirm Replacement",
                         "You are replacing a software wallet with a " + importedKeystore.getSource().getDisplayName().toLowerCase(Locale.ROOT) + ", which will remove the seed. Are you sure?",
@@ -507,6 +512,18 @@ public class KeystoreController extends WalletFormController implements Initiali
                 spScan.setText("");
             }
         }
+    }
+
+    static boolean duplicatesAnotherKeystore(Wallet wallet, Keystore currentKeystore, Keystore importedKeystore) {
+        if(importedKeystore.getExtendedPublicKey() == null) {
+            return false;
+        }
+
+        return wallet.getKeystores().stream()
+                .filter(otherKeystore -> otherKeystore != currentKeystore)
+                .map(Keystore::getExtendedPublicKey)
+                .filter(Objects::nonNull)
+                .anyMatch(importedKeystore.getExtendedPublicKey()::equals);
     }
 
     public void export(ActionEvent event) {
