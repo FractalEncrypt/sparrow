@@ -67,7 +67,7 @@ import java.util.stream.IntStream;
 public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private static final Logger log = LoggerFactory.getLogger(QRScanDialog.class);
 
-    private final URDecoder urDecoder;
+    private URDecoder urDecoder;
     private final LegacyURDecoder legacyUrDecoder;
     private final BBQRDecoder bbqrDecoder;
     private final WebcamService webcamService;
@@ -79,6 +79,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private static final Pattern PART_PATTERN = Pattern.compile("p(\\d{1,4})of(\\d{1,4}) (.+)");
 
     private static final int SCAN_PERIOD_MILLIS = 100;
+    static final long STALE_FRAME_DRAIN_NANOS = 500_000_000L;
     private final ObjectProperty<CaptureDevice> webcamDeviceProperty = new SimpleObjectProperty<>();
     private final ObjectProperty<WebcamResolution> webcamResolutionProperty = new SimpleObjectProperty<>(WebcamResolution.HD);
 
@@ -87,6 +88,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private final ObservableList<CaptureDevice> foundDevices = FXCollections.observableList(new ArrayList<>());
     private final ObservableList<WebcamResolution> availableResolutions = FXCollections.observableList(new ArrayList<>());
     private boolean postOpenUpdate;
+    private volatile long acceptQrResultsAfterNanos = Long.MAX_VALUE;
 
     public QRScanDialog() {
         this(null);
@@ -136,6 +138,10 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
 
         webcamService.openedProperty().addListener((_, _, opened) -> {
             if(opened) {
+                // Some Windows camera backends deliver one buffered result from the
+                // previous dialog immediately after reopening the device. Drain that
+                // short window before accepting a keystore or protocol message.
+                acceptQrResultsAfterNanos = System.nanoTime() + STALE_FRAME_DRAIN_NANOS;
                 Platform.runLater(() -> {
                     try {
                         postOpenUpdate = true;
@@ -160,6 +166,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                     }
                 });
             } else if(webcamResolutionProperty.get() != null) {
+               acceptQrResultsAfterNanos = Long.MAX_VALUE;
                webcamService.setResolution(webcamResolutionProperty.get());
                webcamService.setDevice(webcamDeviceProperty.get());
                Platform.runLater(() -> {
@@ -234,6 +241,9 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
     private class QRResultListener implements ChangeListener<com.google.zxing.Result> {
         @Override
         public void changed(ObservableValue<? extends com.google.zxing.Result> observable, com.google.zxing.Result oldValue, com.google.zxing.Result qrResult) {
+            if(!shouldAcceptQrResult(acceptQrResultsAfterNanos, System.nanoTime())) {
+                return;
+            }
             if(result != null) {
                 Platform.runLater(() -> setResult(result));
             }
@@ -256,7 +266,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                         }
                     }
                 } else {
-                    urDecoder.receivePart(qrtext);
+                    urDecoder = receiveUrPart(urDecoder, qrtext);
                     Platform.runLater(() -> percentComplete.setValue(urDecoder.getProcessedPartsCount() > 0 ? urDecoder.getEstimatedPercentComplete() : 0));
 
                     if(urDecoder.getResult() != null) {
@@ -753,6 +763,22 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                 return new Result(new URException("BBQR type " + result.getBbqrType() + " is not supported"));
             }
         }
+    }
+
+    static boolean shouldAcceptQrResult(long acceptAfterNanos, long nowNanos) {
+        return nowNanos >= acceptAfterNanos;
+    }
+
+    static URDecoder receiveUrPart(URDecoder decoder, String qrtext) {
+        boolean accepted = decoder.receivePart(qrtext);
+        if(!accepted && decoder.getResult() == null && decoder.getProcessedPartsCount() <= 1) {
+            // Camera backends can deliver one buffered frame from the QR that was visible when
+            // the previous scanner closed. If the next live fragment conflicts immediately,
+            // prefer it before the stale fountain header can leave the decoder stuck.
+            URDecoder restarted = new URDecoder();
+            if(restarted.receivePart(qrtext)) return restarted;
+        }
+        return decoder;
     }
 
     private class QRScanDialogPane extends DialogPane {

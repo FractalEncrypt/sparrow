@@ -55,6 +55,18 @@ class AntiExfilPolicySelectionTest {
     }
 
     @Test
+    void unattributableSignedReturnFailsClosedForExpectedRequiredSigner() {
+        Keystore required = compatible("Required", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.REQUIRED);
+        Keystore optional = compatible("Optional", WalletModel.SPECTER_DIY, AntiExfilKeystorePolicy.OPTIONAL);
+
+        assertTrue(AntiExfilPolicy.violatesRequiredPolicy(List.of(required), List.of(), true));
+        assertFalse(AntiExfilPolicy.violatesRequiredPolicy(List.of(required), List.of(), false));
+        assertFalse(AntiExfilPolicy.violatesRequiredPolicy(List.of(optional), List.of(), true));
+        assertFalse(AntiExfilPolicy.violatesRequiredPolicy(List.of(required, optional), List.of(optional), true));
+        assertTrue(AntiExfilPolicy.violatesRequiredPolicy(List.of(required, optional), List.of(required), true));
+    }
+
+    @Test
     void protectedSigningExportsCanonicalV0FromInternalV2() throws Exception {
         JsonObject vector;
         try(InputStreamReader reader = new InputStreamReader(getClass().getResourceAsStream(

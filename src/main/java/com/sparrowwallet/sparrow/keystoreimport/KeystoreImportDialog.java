@@ -27,7 +27,7 @@ public class KeystoreImportDialog extends Dialog<Keystore> {
 
     public KeystoreImportDialog(Wallet wallet, KeystoreSource initialSource, KeyDerivation currentDerivation, WalletModel currentModel, String currentLabel, boolean restrictImport) {
         EventManager.get().register(this);
-        setOnCloseRequest(event -> {
+        setOnHidden(event -> {
             EventManager.get().unregister(this);
         });
 
