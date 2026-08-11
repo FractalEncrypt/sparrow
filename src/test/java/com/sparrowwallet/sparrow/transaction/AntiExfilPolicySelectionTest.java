@@ -1,5 +1,9 @@
 package com.sparrowwallet.sparrow.transaction;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.antiexfil.AntiExfilPsbt;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
 import com.sparrowwallet.drongo.wallet.Wallet;
@@ -9,12 +13,16 @@ import com.sparrowwallet.drongo.psbt.PSBTInput;
 import com.sparrowwallet.drongo.protocol.TransactionSignature;
 import org.junit.jupiter.api.Test;
 
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AntiExfilPolicySelectionTest {
@@ -44,6 +52,23 @@ class AntiExfilPolicySelectionTest {
         assertFalse(AntiExfilPolicy.hasRequiredSignature(wallet, (PSBT)null));
         required.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
         assertFalse(AntiExfilPolicy.requiresProtectedSigning(wallet));
+    }
+
+    @Test
+    void protectedSigningExportsCanonicalV0FromInternalV2() throws Exception {
+        JsonObject vector;
+        try(InputStreamReader reader = new InputStreamReader(getClass().getResourceAsStream(
+                "/com/sparrowwallet/sparrow/io/protocol-v1-semantic-psbt-vector.json"), StandardCharsets.UTF_8)) {
+            vector = JsonParser.parseReader(reader).getAsJsonObject();
+        }
+        byte[] canonicalV0 = Utils.hexToBytes(vector.get("psbt_hex").getAsString());
+        PSBT internal = new PSBT(canonicalV0, false);
+        internal.convertVersion(2);
+
+        assertEquals(2, internal.getVersion());
+        byte[] exported = HeadersController.getAntiExfilPsbtBytes(internal);
+        assertNull(AntiExfilPsbt.parseCanonicalV0(exported).getVersion());
+        assertArrayEquals(canonicalV0, exported);
     }
 
     private static Keystore compatible(String label, WalletModel model, AntiExfilKeystorePolicy policy) {
