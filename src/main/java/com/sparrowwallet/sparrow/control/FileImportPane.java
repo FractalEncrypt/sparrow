@@ -5,7 +5,6 @@ import com.sparrowwallet.drongo.OsType;
 import com.sparrowwallet.drongo.crypto.InvalidPasswordException;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.wallet.Keystore;
-import com.sparrowwallet.drongo.wallet.KeystoreSource;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
 import com.sparrowwallet.sparrow.AppServices;
@@ -206,9 +205,7 @@ public abstract class FileImportPane extends TitledDescriptionPane {
                     if(Keystore.DEFAULT_LABEL.equals(keystore.getLabel())) {
                         keystore.setLabel(importer.getName().replace(" Multisig", ""));
                     }
-                    keystore.setSource(KeystoreSource.HW_AIRGAPPED);
-                    keystore.setWalletModel(importer.getWalletModel());
-                    return keystore;
+                    return importer.applyScannedKeystoreMetadata(keystore);
                 }
             }
 

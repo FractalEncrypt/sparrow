@@ -12,8 +12,13 @@ public class SeedSigner extends SpecterDIY {
     @Override
     public Keystore getKeystore(PolicyType policyType, ScriptType scriptType, InputStream inputStream, String password) throws ImportException {
         Keystore keystore = super.getKeystore(policyType, scriptType, inputStream, password);
-        keystore.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
+        keystore.setAntiExfilPolicy(getDefaultAntiExfilPolicy());
         return keystore;
+    }
+
+    @Override
+    public AntiExfilKeystorePolicy getDefaultAntiExfilPolicy() {
+        return AntiExfilKeystorePolicy.OPTIONAL;
     }
 
     @Override

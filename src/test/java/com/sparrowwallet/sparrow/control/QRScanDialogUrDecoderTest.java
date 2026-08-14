@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QRScanDialogUrDecoderTest {
     @Test
-    void ignoresBufferedResultsUntilCameraDrainWindowExpires() {
+    void ignoresBufferedResultsAndPreviewUntilCameraDrainWindowExpires() {
         long openedAt = 10_000L;
         long acceptAfter = openedAt + QRScanDialog.STALE_FRAME_DRAIN_NANOS;
 

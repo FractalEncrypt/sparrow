@@ -31,6 +31,7 @@ import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.io.bbqr.BBQRDecoder;
 import com.sparrowwallet.sparrow.io.bbqr.BBQRException;
 import com.sparrowwallet.sparrow.wallet.KeystoreController;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
@@ -116,6 +117,15 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
         AppServices.setStageIcon(dialogPane.getScene().getWindow());
 
         WebcamView webcamView = new WebcamView(webcamService, Config.get().isMirrorCapture());
+        Node webcamNode = webcamView.getView();
+        webcamNode.setVisible(false);
+        PauseTransition stalePreviewDrain = new PauseTransition(
+                Duration.millis(STALE_FRAME_DRAIN_NANOS / 1_000_000.0));
+        stalePreviewDrain.setOnFinished(event -> {
+            if(webcamService.openedProperty().get()) {
+                webcamNode.setVisible(true);
+            }
+        });
 
         ProgressBar progressBar = new ProgressBar();
         progressBar.setMinHeight(20);
@@ -125,7 +135,8 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
 
         VBox vBox = new VBox(20);
         StackPane stackPane = new StackPane();
-        stackPane.getChildren().add(webcamView.getView());
+        stackPane.setStyle("-fx-background-color: black;");
+        stackPane.getChildren().add(webcamNode);
         Node wrappedView = Borders.wrap(stackPane).lineBorder().buildAll();
         vBox.getChildren().addAll(wrappedView, progressBar);
         dialogPane.setContent(vBox);
@@ -140,9 +151,12 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
             if(opened) {
                 // Some Windows camera backends deliver one buffered result from the
                 // previous dialog immediately after reopening the device. Drain that
-                // short window before accepting a keystore or protocol message.
+                // short window before displaying or accepting a keystore or protocol
+                // message.
                 acceptQrResultsAfterNanos = System.nanoTime() + STALE_FRAME_DRAIN_NANOS;
                 Platform.runLater(() -> {
+                    webcamNode.setVisible(false);
+                    stalePreviewDrain.playFromStart();
                     try {
                         postOpenUpdate = true;
                         List<CaptureDevice> newDevices = new ArrayList<>(webcamService.getAvailableDevices());
@@ -166,6 +180,10 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                 });
             } else if(webcamResolutionProperty.get() != null) {
                acceptQrResultsAfterNanos = Long.MAX_VALUE;
+               Platform.runLater(() -> {
+                   stalePreviewDrain.stop();
+                   webcamNode.setVisible(false);
+               });
                webcamService.setResolution(webcamResolutionProperty.get());
                webcamService.setDevice(webcamDeviceProperty.get());
                Platform.runLater(() -> {
