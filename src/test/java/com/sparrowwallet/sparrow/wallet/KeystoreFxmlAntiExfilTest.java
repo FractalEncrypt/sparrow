@@ -1,5 +1,7 @@
 package com.sparrowwallet.sparrow.wallet;
 
+import com.sparrowwallet.drongo.wallet.Keystore;
+import com.sparrowwallet.drongo.wallet.WalletModel;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -45,5 +47,19 @@ class KeystoreFxmlAntiExfilTest {
         assertNull(failure.get(), failure.get() == null ? null : failure.get().toString());
         assertNotNull(root.get());
         assertNotNull(root.get().lookup("#antiExfilPolicy"));
+    }
+
+    @Test
+    void requiredPolicyIsOfferedOnlyForVerifiedDeviceModels() {
+        Keystore seedSigner = new Keystore("SeedSigner");
+        seedSigner.setWalletModel(WalletModel.SEEDSIGNER);
+        Keystore passport = new Keystore("Passport");
+        passport.setWalletModel(WalletModel.PASSPORT);
+        Keystore specter = new Keystore("Specter DIY");
+        specter.setWalletModel(WalletModel.SPECTER_DIY);
+
+        assertTrue(KeystoreController.supportsRequiredAntiExfil(seedSigner));
+        assertFalse(KeystoreController.supportsRequiredAntiExfil(passport));
+        assertFalse(KeystoreController.supportsRequiredAntiExfil(specter));
     }
 }
