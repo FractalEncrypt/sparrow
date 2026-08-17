@@ -144,6 +144,8 @@ class AntiExfilPolicySelectionTest {
         assertTrue(signed.isFinalized());
         assertNotEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, signed, Set.of(proofA)));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                AntiExfilPolicy.evaluateSignatureProvenance(wallet, null, signed.extractTransaction(), Set.of(proofA)));
     }
 
     @Test

@@ -1550,7 +1550,11 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     private AntiExfilPolicy.ProvenanceStatus currentProvenanceStatus() {
-        if(headersForm.getPsbt() == null) return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        if(headersForm.getPsbt() == null) {
+            if(headersForm.getBlockTransaction() != null) return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+            return AntiExfilPolicy.evaluateSignatureProvenance(headersForm.getSigningWallet(), null,
+                    headersForm.getTransaction(), headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+        }
         if(headersForm.getSigningWallet() == null) return headersForm.getPsbt().hasSignatures()
                 ? AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
                 : AntiExfilPolicy.ProvenanceStatus.PERMITTED;
@@ -1571,7 +1575,11 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     private void applyProvenanceQuarantine() {
-        if(headersForm.getPsbt() == null || !headersForm.getPsbt().hasSignatures()) return;
+        boolean signedPayload = headersForm.getPsbt() != null
+                ? headersForm.getPsbt().hasSignatures()
+                : headersForm.getBlockTransaction() == null
+                && (headersForm.getTransaction().hasScriptSigs() || headersForm.getTransaction().hasWitnesses());
+        if(!signedPayload) return;
         AntiExfilPolicy.ProvenanceStatus status = currentProvenanceStatus();
         boolean quarantined = status != AntiExfilPolicy.ProvenanceStatus.PERMITTED;
         finalizeTransaction.setDisable(quarantined);
