@@ -20,4 +20,4 @@ jobs:
           distribution: temurin
           java-version: 25.0.2
       - name: Run full Sparrow suite
-        run: ./gradlew :test
+        run: xvfb-run -a ./gradlew :test
