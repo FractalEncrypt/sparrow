@@ -7,6 +7,7 @@ import com.sparrowwallet.drongo.psbt.PSBTOutput;
 import com.sparrowwallet.drongo.silentpayments.SilentPaymentAddress;
 import com.sparrowwallet.drongo.wallet.*;
 import com.sparrowwallet.sparrow.io.Storage;
+import com.sparrowwallet.drongo.antiexfil.VerifiedAntiExfilSignature;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableMap;
@@ -20,6 +21,7 @@ public class TransactionData {
     private BlockTransaction blockTransaction;
     private Map<Sha256Hash, BlockTransaction> inputTransactions;
     private List<BlockTransaction> outputTransactions;
+    private final Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures = new LinkedHashSet<>();
 
     private int minInputFetched;
     private int maxInputFetched;
@@ -32,8 +34,13 @@ public class TransactionData {
     private final SimpleObjectProperty<WalletTransaction> walletTransaction = new SimpleObjectProperty<>(this, "walletTransaction", null);
 
     public TransactionData(String name, PSBT psbt) {
+        this(name, psbt, Set.of());
+    }
+
+    public TransactionData(String name, PSBT psbt, Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         this(name, psbt.getTransaction());
         this.psbt = psbt;
+        this.verifiedAntiExfilSignatures.addAll(verifiedAntiExfilSignatures);
     }
 
     public TransactionData(String name, BlockTransaction blockTransaction) {
@@ -60,6 +67,19 @@ public class TransactionData {
 
     public PSBT getPsbt() {
         return psbt;
+    }
+
+    public Set<VerifiedAntiExfilSignature> getVerifiedAntiExfilSignatures() {
+        return Collections.unmodifiableSet(verifiedAntiExfilSignatures);
+    }
+
+    public void addVerifiedAntiExfilSignatures(Collection<VerifiedAntiExfilSignature> signatures) {
+        verifiedAntiExfilSignatures.addAll(signatures);
+    }
+
+    public void replaceVerifiedAntiExfilSignatures(Collection<VerifiedAntiExfilSignature> signatures) {
+        verifiedAntiExfilSignatures.clear();
+        verifiedAntiExfilSignatures.addAll(signatures);
     }
 
     public BlockTransaction getBlockTransaction() {

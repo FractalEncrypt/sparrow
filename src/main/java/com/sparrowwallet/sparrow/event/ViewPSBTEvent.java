@@ -1,10 +1,12 @@
 package com.sparrowwallet.sparrow.event;
 
 import com.sparrowwallet.drongo.psbt.PSBT;
+import com.sparrowwallet.drongo.antiexfil.VerifiedAntiExfilSignature;
 import com.sparrowwallet.sparrow.transaction.TransactionView;
 import javafx.stage.Window;
 
 import java.io.File;
+import java.util.Set;
 
 public class ViewPSBTEvent {
     private final Window window;
@@ -14,7 +16,7 @@ public class ViewPSBTEvent {
     private final PSBT contextPsbt;
     private final TransactionView initialView;
     private final Integer initialIndex;
-    private final boolean antiExfilVerified;
+    private final Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures;
 
     public ViewPSBTEvent(Window window, String label, File file, PSBT psbt) {
         this(window, label, file, psbt, null, TransactionView.HEADERS, null);
@@ -29,11 +31,11 @@ public class ViewPSBTEvent {
     }
 
     public ViewPSBTEvent(Window window, String label, File file, PSBT psbt, PSBT contextPsbt, TransactionView initialView, Integer initialIndex) {
-        this(window, label, file, psbt, contextPsbt, initialView, initialIndex, false);
+        this(window, label, file, psbt, contextPsbt, initialView, initialIndex, Set.of());
     }
 
     public ViewPSBTEvent(Window window, String label, File file, PSBT psbt, PSBT contextPsbt, TransactionView initialView,
-                         Integer initialIndex, boolean antiExfilVerified) {
+                         Integer initialIndex, Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         this.window = window;
         this.label = label;
         this.file = file;
@@ -41,7 +43,7 @@ public class ViewPSBTEvent {
         this.contextPsbt = contextPsbt;
         this.initialView = initialView;
         this.initialIndex = initialIndex;
-        this.antiExfilVerified = antiExfilVerified;
+        this.verifiedAntiExfilSignatures = Set.copyOf(verifiedAntiExfilSignatures);
     }
 
     public Window getWindow() {
@@ -72,7 +74,7 @@ public class ViewPSBTEvent {
         return initialIndex;
     }
 
-    public boolean isAntiExfilVerified() {
-        return antiExfilVerified;
+    public Set<VerifiedAntiExfilSignature> getVerifiedAntiExfilSignatures() {
+        return verifiedAntiExfilSignatures;
     }
 }

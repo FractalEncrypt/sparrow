@@ -591,6 +591,8 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
+            if(signingWallet == null) return;
+            reloadVerifiedAntiExfilSignatures(signingWallet);
             initializeSignButton(signingWallet);
             boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
                     .anyMatch(Keystore::supportsAntiExfil);
@@ -606,7 +608,10 @@ public class HeadersController extends TransactionFormController implements Init
             signaturesProgressBar.initialize(headersForm.getSignatureKeystoreMap(), threshold);
 
             learnSilentPaymentAddresses(signingWallet, headersForm.getPsbt());
+            applyProvenanceQuarantine();
         });
+
+        applyProvenanceQuarantine();
 
         blockchainForm.setDynamicUpdate(this);
 
@@ -1249,8 +1254,10 @@ public class HeadersController extends TransactionFormController implements Init
             if(result.outcome() == AntiExfilSigningFlow.Outcome.COMPLETE && result.completion() != null) {
                 if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
                 PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);
+                AntiExfilProvenanceStore.record(wallet, storage, sessionPath, signed);
                 EventManager.get().post(new ViewPSBTEvent(antiExfilButton.getScene().getWindow(), null, null,
-                        signed, headersForm.getPsbt(), TransactionView.HEADERS, null, true));
+                        signed, headersForm.getPsbt(), TransactionView.HEADERS, null,
+                        result.completion().getVerifiedSignatures()));
             }
         } catch(Exception exception) {
             log.error("Anti-exfil signing failed", exception);
@@ -1305,6 +1312,13 @@ public class HeadersController extends TransactionFormController implements Init
                     keystore.setMasterPrivateExtendedKey(null);
                 });
                 Keystore original = walletCopy.getKeystores().get(optIndex.getAsInt());
+                if(original.isAntiExfilRequired()
+                        && headersForm.getSigningWallet().getSigningKeystores(headersForm.getPsbt()).contains(
+                        headersForm.getSigningWallet().getKeystores().get(optIndex.getAsInt()))) {
+                    showErrorDialog("Protected signing required",
+                            "This keystore requires the Protected QR signing action and cannot be signed from a scanned seed.");
+                    return;
+                }
                 Keystore replacement = Keystore.fromSeed(seed, walletCopy.getPolicyType(), original.getKeyDerivation().getDerivation());
                 walletCopy.getKeystores().set(optIndex.getAsInt(), replacement);
                 signUnencryptedKeystores(walletCopy);
@@ -1401,6 +1415,11 @@ public class HeadersController extends TransactionFormController implements Init
 
     private void signUnencryptedKeystores(Wallet unencryptedWallet) {
         try {
+            if(violatesRequiredSoftwareSigning(headersForm.getSigningWallet(), unencryptedWallet, headersForm.getPsbt())) {
+                showErrorDialog("Protected signing required",
+                        "A participating private keystore requires the Protected QR signing action.");
+                return;
+            }
             Map<PSBTInput, WalletNode> signingNodes = unencryptedWallet.getSigningNodes(headersForm.getPsbt());
             List<SilentPayment> silentPayments = unencryptedWallet.computeSilentPaymentOutputs(headersForm.getPsbt(), signingNodes);
             if(!silentPayments.isEmpty()) {
@@ -1447,6 +1466,14 @@ public class HeadersController extends TransactionFormController implements Init
         if(optionalSignedPsbt.isPresent()) {
             PSBT signedPsbt = optionalSignedPsbt.get();
             try {
+                AntiExfilPolicy.ProvenanceStatus status = AntiExfilPolicy.evaluateSignatureProvenance(
+                        headersForm.getSigningWallet(), signedPsbt,
+                        headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+                if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+                    AppServices.showErrorDialog("Protected signature rejected",
+                            "The device return does not satisfy protected-signing policy (" + status + ").");
+                    return;
+                }
                 PSBT combinedPsbt = headersForm.getPsbt().verifyCombinedSignatures(signedPsbt);
                 //A device can resolve a silent payment output script, which is only valid if the metadata provided with it proves the claimed address
                 verifySilentPaymentScripts(headersForm.getSigningWallet(), combinedPsbt);
@@ -1489,6 +1516,12 @@ public class HeadersController extends TransactionFormController implements Init
     private void finalizePSBT() {
         if(headersForm.getPsbt() != null && headersForm.getPsbt().isSigned() && !headersForm.getPsbt().isFinalized()) {
             try {
+                AntiExfilPolicy.ProvenanceStatus status = currentProvenanceStatus();
+                if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+                    AppServices.showErrorDialog("Protected signature rejected",
+                            "This PSBT cannot be finalized because protected-signing provenance failed (" + status + ").");
+                    return;
+                }
                 headersForm.getSigningWallet().finalise(headersForm.getPsbt());
                 EventManager.get().post(new PSBTFinalizedEvent(headersForm.getPsbt()));
             } catch(IllegalArgumentException e) {
@@ -1519,6 +1552,13 @@ public class HeadersController extends TransactionFormController implements Init
 
     public void broadcastTransaction(ActionEvent event) {
         broadcastButton.setDisable(true);
+        AntiExfilPolicy.ProvenanceStatus provenanceStatus = currentProvenanceStatus();
+        if(provenanceStatus != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+            AppServices.showErrorDialog("Broadcast blocked",
+                    "Protected-signing provenance could not be verified (" + provenanceStatus + ").");
+            broadcastButton.setDisable(false);
+            return;
+        }
         if(headersForm.getPsbt() != null) {
             if(!extractTransaction()) {
                 broadcastButton.setDisable(false);
@@ -1665,6 +1705,54 @@ public class HeadersController extends TransactionFormController implements Init
         signaturesProgressBar.setVisible(false);
         broadcastProgressBar.setProgress(-1);
         broadcastTransactionService.start();
+    }
+
+    private AntiExfilPolicy.ProvenanceStatus currentProvenanceStatus() {
+        if(headersForm.getPsbt() == null) return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        if(headersForm.getSigningWallet() == null) return headersForm.getPsbt().hasSignatures()
+                ? AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
+                : AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        if(!AntiExfilPolicy.requiresProtectedSigning(headersForm.getSigningWallet())
+                && headersForm.getTransactionData().getVerifiedAntiExfilSignatures().isEmpty()) {
+            return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        }
+        return AntiExfilPolicy.evaluateSignatureProvenance(headersForm.getSigningWallet(), headersForm.getPsbt(),
+                headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+    }
+
+    private void reloadVerifiedAntiExfilSignatures(Wallet signingWallet) {
+        if(headersForm.getPsbt() == null) return;
+        Storage storage = headersForm.getAvailableWallets().get(signingWallet);
+        if(storage == null) return;
+        headersForm.getTransactionData().addVerifiedAntiExfilSignatures(
+                AntiExfilProvenanceStore.resolve(signingWallet, storage, headersForm.getPsbt()));
+    }
+
+    private void applyProvenanceQuarantine() {
+        if(headersForm.getPsbt() == null || !headersForm.getPsbt().hasSignatures()) return;
+        AntiExfilPolicy.ProvenanceStatus status = currentProvenanceStatus();
+        boolean quarantined = status != AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        finalizeTransaction.setDisable(quarantined);
+        broadcastButton.setDisable(quarantined);
+        viewFinalButton.setDisable(quarantined);
+        String message = quarantined
+                ? "Read-only: open the signing wallet and provide every required protected-signing proof (" + status + ")."
+                : null;
+        finalizeTransaction.setTooltip(message == null ? null : new Tooltip(message));
+        broadcastButton.setTooltip(message == null ? null : new Tooltip(message));
+    }
+
+    static boolean violatesRequiredSoftwareSigning(Wallet policyWallet, Wallet unencryptedWallet, PSBT psbt) {
+        if(policyWallet == null || unencryptedWallet == null || psbt == null) return false;
+        Set<String> requiredIdentities = policyWallet.getSigningKeystores(psbt).stream()
+                .filter(Keystore::isAntiExfilRequired)
+                .map(keystore -> Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(keystore)))
+                .collect(Collectors.toSet());
+        return unencryptedWallet.getKeystores().stream()
+                .filter(Keystore::hasPrivateKey)
+                .filter(keystore -> keystore.getExtendedPublicKey() != null && keystore.getKeyDerivation() != null)
+                .map(keystore -> Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(keystore)))
+                .anyMatch(requiredIdentities::contains);
     }
 
     public void showTransaction(ActionEvent event) {
@@ -1925,15 +2013,10 @@ public class HeadersController extends TransactionFormController implements Init
                 }
             } else {
                 if(headersForm.getPsbt().isSigned()) {
-                    if(headersForm.getSigningWallet() == null) {
-                        //As no signing wallet is available, but we want to show the PSBT has been signed and automatically finalize it, construct a special wallet with default named keystores
-                        Wallet signedWallet = new FinalizingPSBTWallet(headersForm.getPsbt());
-                        headersForm.setSigningWallet(signedWallet);
-                    }
-
-                    //Finalize this PSBT if necessary as fully signed PSBTs are automatically finalized on once the signature threshold has been reached
-                    finalizePSBT();
+                    //Signed imports without an attributable open wallet remain inspectable but
+                    //cannot be finalized or broadcast until protected-signing policy is evaluated.
                     broadcastButtonBox.setVisible(true);
+                    applyProvenanceQuarantine();
                 } else {
                     noWalletsWarning.setVisible(true);
                     signingWallet.setVisible(false);
