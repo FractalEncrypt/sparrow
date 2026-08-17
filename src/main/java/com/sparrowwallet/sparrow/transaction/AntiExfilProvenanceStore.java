@@ -90,9 +90,21 @@ public final class AntiExfilProvenanceStore {
 
         Set<VerifiedAntiExfilSignature> resolved = new LinkedHashSet<>();
         Path normalizedRoot = walletRoot.toAbsolutePath().normalize();
+        Path realRoot;
+        try {
+            realRoot = normalizedRoot.toRealPath();
+        } catch(IOException exception) {
+            return Set.of();
+        }
         for(Path candidate : candidates) {
             Path normalized = candidate.toAbsolutePath().normalize();
             if(!normalized.startsWith(normalizedRoot) || !Files.isRegularFile(normalized)) continue;
+            try {
+                normalized = normalized.toRealPath();
+            } catch(IOException exception) {
+                continue;
+            }
+            if(!normalized.startsWith(realRoot)) continue;
             for(Keystore keystore : wallet.getKeystores()) {
                 if(keystore.getExtendedPublicKey() == null || keystore.getKeyDerivation() == null) continue;
                 String identity = Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(keystore));
