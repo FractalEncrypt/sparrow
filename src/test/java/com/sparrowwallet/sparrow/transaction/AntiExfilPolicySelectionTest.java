@@ -157,6 +157,10 @@ class AntiExfilPolicySelectionTest {
                 AntiExfilKeystorePolicy.REQUIRED);
         Wallet wallet = new Wallet("mixed");
         wallet.getKeystores().addAll(List.of(signerA, signerB));
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH,
+                wallet.getKeystores(), 2));
         byte[] original = Utils.hexToBytes(vector.get("original_psbt_hex").getAsString());
         PSBT signed = new PSBT(Utils.hexToBytes(vector.get("signed_psbt_hex").getAsString()), false);
         Path walletRoot = temporary.resolve("sessions");
@@ -176,6 +180,17 @@ class AntiExfilPolicySelectionTest {
         assertEquals(1, resolved.size());
         assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, signed, resolved));
+
+        signerB.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
+        wallet.finalise(signed);
+        assertTrue(signed.isFinalized());
+        Set<VerifiedAntiExfilSignature> resolvedFinalized = AntiExfilProvenanceStore.resolve(
+                walletRoot, journals, wallet, signed);
+        assertEquals(1, resolvedFinalized.size());
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                AntiExfilPolicy.evaluateSignatureProvenance(wallet, signed, resolvedFinalized));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                AntiExfilPolicy.evaluateSignatureProvenance(wallet, signed, Set.of()));
 
         byte[] corrupt = Files.readAllBytes(session);
         corrupt[corrupt.length - 1] ^= 1;

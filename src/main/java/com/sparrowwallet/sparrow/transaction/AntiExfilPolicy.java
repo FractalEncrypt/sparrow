@@ -15,10 +15,13 @@ import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.Wallet;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -93,14 +96,13 @@ public final class AntiExfilPolicy {
         try {
             if(psbt.isFinalized()) {
                 Transaction transaction = psbt.extractTransaction();
-                for(Map.Entry<TransactionInput, Map<TransactionSignature, Keystore>> inputEntry
-                        : wallet.getSignedKeystores(transaction).entrySet()) {
-                    int inputIndex = transaction.getInputs().indexOf(inputEntry.getKey());
-                    if(inputIndex < 0 || inputIndex >= psbt.getPsbtInputs().size()) continue;
+                for(int inputIndex = 0; inputIndex < psbt.getPsbtInputs().size(); inputIndex++) {
                     PSBTInput input = psbt.getPsbtInputs().get(inputIndex);
-                    for(Map.Entry<TransactionSignature, Keystore> signatureEntry : inputEntry.getValue().entrySet()) {
-                        VerifiedAntiExfilSignature proof = findMatchingFinalProof(Set.copyOf(proofs),
-                                signatureEntry.getValue(), input, inputIndex, signatureEntry.getKey());
+                    for(TransactionSignature signature : getFinalSignatures(transaction.getInputs().get(inputIndex))) {
+                        AttributedFinalSignature attributed = attributeFinalSignature(wallet, input, signature);
+                        if(attributed == null) continue;
+                        VerifiedAntiExfilSignature proof = findMatchingProof(Set.copyOf(proofs),
+                                attributed.signer(), input, inputIndex, attributed.publicKey(), signature);
                         if(proof != null) matching.add(proof);
                     }
                 }
@@ -132,19 +134,24 @@ public final class AntiExfilPolicy {
         Set<VerifiedAntiExfilSignature> matchedProofs = new HashSet<>();
         boolean attributedAny = false;
         try {
-            Map<TransactionInput, Map<TransactionSignature, Keystore>> attributed = wallet.getSignedKeystores(transaction);
-            for(Map.Entry<TransactionInput, Map<TransactionSignature, Keystore>> inputEntry : attributed.entrySet()) {
-                int inputIndex = transaction.getInputs().indexOf(inputEntry.getKey());
-                if(inputIndex < 0 || inputIndex >= contextPsbt.getPsbtInputs().size()) {
-                    return ProvenanceStatus.INVALID_PROVENANCE;
-                }
+            if(transaction.getInputs().size() != contextPsbt.getPsbtInputs().size()) {
+                return ProvenanceStatus.INVALID_PROVENANCE;
+            }
+            for(int inputIndex = 0; inputIndex < contextPsbt.getPsbtInputs().size(); inputIndex++) {
                 PSBTInput contextInput = contextPsbt.getPsbtInputs().get(inputIndex);
-                for(Map.Entry<TransactionSignature, Keystore> signatureEntry : inputEntry.getValue().entrySet()) {
+                for(TransactionSignature signature : getFinalSignatures(transaction.getInputs().get(inputIndex))) {
+                    AttributedFinalSignature attributed = attributeFinalSignature(wallet, contextInput, signature);
+                    if(attributed == null) {
+                        if(hasRequiredParticipant(wallet, contextInput)) {
+                            return ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE;
+                        }
+                        continue;
+                    }
                     attributedAny = true;
-                    VerifiedAntiExfilSignature matching = findMatchingFinalProof(availableProofs,
-                            signatureEntry.getValue(), contextInput, inputIndex, signatureEntry.getKey());
+                    VerifiedAntiExfilSignature matching = findMatchingProof(availableProofs,
+                            attributed.signer(), contextInput, inputIndex, attributed.publicKey(), signature);
                     if(matching != null) matchedProofs.add(matching);
-                    if(signatureEntry.getValue().isAntiExfilRequired() && matching == null) {
+                    if(attributed.signer().isAntiExfilRequired() && matching == null) {
                         return ProvenanceStatus.REQUIRED_PROOF_MISSING;
                     }
                 }
@@ -161,17 +168,29 @@ public final class AntiExfilPolicy {
                 : ProvenanceStatus.INVALID_PROVENANCE;
     }
 
-    private static VerifiedAntiExfilSignature findMatchingFinalProof(Set<VerifiedAntiExfilSignature> proofs,
-                                                                      Keystore signer, PSBTInput input,
-                                                                      int inputIndex, TransactionSignature signature) {
+    private static AttributedFinalSignature attributeFinalSignature(Wallet wallet, PSBTInput input,
+                                                                      TransactionSignature signature) {
+        // A reopened or synthetic PSBT may have no wallet transaction-history nodes. Attribute
+        // final signatures from the authoritative PSBT derivations and signing digest instead.
+        AttributedFinalSignature attributed = null;
+        byte[] messageHash = input.getSigningHash().getBytes();
         for(Map.Entry<ECKey, KeyDerivation> derivation : input.getDerivedPublicKeys().entrySet()) {
-            if(attributeSignerForDerivation(signer, derivation.getKey(), derivation.getValue())) {
-                VerifiedAntiExfilSignature matching = findMatchingProof(proofs, signer, input, inputIndex,
-                        derivation.getKey(), signature);
-                if(matching != null) return matching;
+            Keystore signer = attributeSigner(wallet, input, derivation.getKey());
+            if(signer == null || !signature.verify(messageHash, derivation.getKey())) continue;
+            if(attributed != null && (!attributed.signer().equals(signer)
+                    || !Arrays.equals(attributed.publicKey().getPubKey(), derivation.getKey().getPubKey()))) {
+                return null;
             }
+            attributed = new AttributedFinalSignature(signer, derivation.getKey());
         }
-        return null;
+        return attributed;
+    }
+
+    private static List<TransactionSignature> getFinalSignatures(TransactionInput input) {
+        Set<TransactionSignature> signatures = new LinkedHashSet<>();
+        if(input.hasWitness()) signatures.addAll(input.getWitness().getSignatures());
+        signatures.addAll(input.getScriptSig().getSignatures());
+        return new ArrayList<>(signatures);
     }
 
     private static VerifiedAntiExfilSignature findMatchingProof(Set<VerifiedAntiExfilSignature> proofs,
@@ -274,6 +293,9 @@ public final class AntiExfilPolicy {
             }
         }
         return false;
+    }
+
+    private record AttributedFinalSignature(Keystore signer, ECKey publicKey) {
     }
 
     public enum ProvenanceStatus {

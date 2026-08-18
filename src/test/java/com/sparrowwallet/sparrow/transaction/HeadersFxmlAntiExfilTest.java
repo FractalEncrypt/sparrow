@@ -45,5 +45,6 @@ class HeadersFxmlAntiExfilTest {
         assertNull(failure.get(), failure.get() == null ? null : failure.get().toString());
         assertNotNull(root.get());
         assertNotNull(root.get().lookup("#antiExfilButton"));
+        assertNotNull(root.get().lookup("#provenanceWarning"));
     }
 }
