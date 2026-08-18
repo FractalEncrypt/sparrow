@@ -15,6 +15,11 @@ import javafx.collections.ObservableMap;
 import java.util.*;
 
 public class TransactionData {
+    public enum Origin {
+        EXTERNAL,
+        INTERNAL_SWEEP
+    }
+
     private Transaction transaction;
     private String name;
     private PSBT psbt;
@@ -22,6 +27,8 @@ public class TransactionData {
     private Map<Sha256Hash, BlockTransaction> inputTransactions;
     private List<BlockTransaction> outputTransactions;
     private final Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures = new LinkedHashSet<>();
+    private final Origin origin;
+    private final byte[] originTransactionDigest;
 
     private int minInputFetched;
     private int maxInputFetched;
@@ -49,8 +56,19 @@ public class TransactionData {
     }
 
     public TransactionData(String name, Transaction transaction) {
+        this(name, transaction, Origin.EXTERNAL);
+    }
+
+    public TransactionData(String name, Transaction transaction, Origin origin) {
         this.name = name;
         this.transaction = transaction;
+        this.origin = Objects.requireNonNull(origin);
+        // This authorization is intentionally in-memory only. File/QR parsing, persistence,
+        // and cross-window events use the EXTERNAL constructors, and any byte mutation
+        // invalidates the snapshot below.
+        this.originTransactionDigest = origin == Origin.INTERNAL_SWEEP
+                ? Sha256Hash.hash(transaction.bitcoinSerialize())
+                : null;
     }
 
     public Transaction getTransaction() {
@@ -59,6 +77,11 @@ public class TransactionData {
 
     public void setTransaction(Transaction transaction) {
         this.transaction = transaction;
+    }
+
+    public boolean hasValidInternalSweepOrigin() {
+        return origin == Origin.INTERNAL_SWEEP
+                && Arrays.equals(originTransactionDigest, Sha256Hash.hash(transaction.bitcoinSerialize()));
     }
 
     public String getName() {
