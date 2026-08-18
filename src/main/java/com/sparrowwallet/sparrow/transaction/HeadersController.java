@@ -240,6 +240,9 @@ public class HeadersController extends TransactionFormController implements Init
     private HBox broadcastButtonBox;
 
     @FXML
+    private Label provenanceWarning;
+
+    @FXML
     private Button viewFinalButton;
 
     @FXML
@@ -488,6 +491,8 @@ public class HeadersController extends TransactionFormController implements Init
         signButtonBox.managedProperty().bind(signButtonBox.visibleProperty());
         antiExfilButton.managedProperty().bind(antiExfilButton.visibleProperty());
         broadcastButtonBox.managedProperty().bind(broadcastButtonBox.visibleProperty());
+        provenanceWarning.managedProperty().bind(provenanceWarning.visibleProperty());
+        provenanceWarning.setVisible(false);
 
         signaturesProgressBar.managedProperty().bind(signaturesProgressBar.visibleProperty());
         broadcastProgressBar.managedProperty().bind(broadcastProgressBar.visibleProperty());
@@ -1585,11 +1590,18 @@ public class HeadersController extends TransactionFormController implements Init
         finalizeTransaction.setDisable(quarantined);
         broadcastButton.setDisable(quarantined);
         viewFinalButton.setDisable(quarantined);
+        showTransactionButton.setDisable(quarantined);
+        saveFinalButton.setDisable(quarantined);
         String message = quarantined
                 ? "Read-only: open the signing wallet and provide every required protected-signing proof (" + status + ")."
                 : null;
+        provenanceWarning.setText(message);
+        provenanceWarning.setVisible(quarantined);
         finalizeTransaction.setTooltip(message == null ? null : new Tooltip(message));
+        viewFinalButton.setTooltip(message == null ? null : new Tooltip(message));
         broadcastButton.setTooltip(message == null ? null : new Tooltip(message));
+        showTransactionButton.setTooltip(message == null ? null : new Tooltip(message));
+        saveFinalButton.setTooltip(message == null ? null : new Tooltip(message));
     }
 
     static boolean violatesRequiredSoftwareSigning(Wallet policyWallet, Wallet unencryptedWallet, PSBT psbt) {

@@ -341,6 +341,7 @@
                         </graphic>
                     </Button>
                 </HBox>
+                <Label fx:id="provenanceWarning" visible="false" managed="false" wrapText="true" styleClass="failure" />
             </VBox>
         </Fieldset>
     </Form>
