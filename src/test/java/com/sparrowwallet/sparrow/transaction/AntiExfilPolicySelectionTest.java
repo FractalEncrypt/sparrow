@@ -11,6 +11,8 @@ import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
+import com.sparrowwallet.drongo.protocol.Transaction;
+import com.sparrowwallet.drongo.protocol.TransactionInput;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
 import com.sparrowwallet.drongo.wallet.DeterministicSeed;
@@ -198,6 +200,80 @@ class AntiExfilPolicySelectionTest {
         assertTrue(AntiExfilProvenanceStore.resolve(walletRoot, journals, wallet, signed).isEmpty());
     }
 
+    @Test
+    void rawTransactionQuarantineRequiresPositiveCompleteOptionalAttribution() throws Exception {
+        Transaction transaction = finalizedMixedTransaction();
+        Keystore optionalA = compatible("Optional A", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
+        Keystore optionalB = compatible("Optional B", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
+        Keystore required = compatible("Required", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.REQUIRED);
+
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                AntiExfilPolicy.evaluateRawTransactionProvenance(null, transaction));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                AntiExfilPolicy.evaluateRawTransactionProvenance(
+                        new RawAttributedWallet(List.of(optionalA)), transaction));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                AntiExfilPolicy.evaluateRawTransactionProvenance(
+                        new RawAttributedWallet(List.of(optionalA, optionalB)), transaction));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                AntiExfilPolicy.evaluateRawTransactionProvenance(
+                        new RawAttributedWallet(List.of(optionalA, required)), transaction));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.INVALID_PROVENANCE,
+                AntiExfilPolicy.evaluateRawTransactionProvenance(new RawAttributedWallet(), transaction));
+
+        TransactionData tab = new TransactionData("raw", transaction);
+        tab.setSigningWallet(new RawAttributedWallet(List.of(optionalA, optionalB)));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                HeadersController.getRawTransactionProvenance(tab));
+        tab.setSigningWallet(new RawAttributedWallet(List.of(optionalA, required)));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                HeadersController.getRawTransactionProvenance(tab));
+        tab.setSigningWallet(null);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                HeadersController.getRawTransactionProvenance(tab));
+    }
+
+    @Test
+    void internalSweepExemptionIsLocalEphemeralAndDigestBound() throws Exception {
+        Transaction transaction = finalizedMixedTransaction();
+        TransactionData internalSweep = new TransactionData("sweep", transaction,
+                TransactionData.Origin.INTERNAL_SWEEP);
+
+        assertTrue(internalSweep.hasValidInternalSweepOrigin());
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                HeadersController.getRawTransactionProvenance(internalSweep));
+
+        Transaction reopened = new Transaction(transaction.bitcoinSerialize());
+        TransactionData savedAndReopened = new TransactionData("reopened", reopened);
+        TransactionData crossWindow = new TransactionData("forwarded", new Transaction(transaction.bitcoinSerialize()));
+        assertFalse(savedAndReopened.hasValidInternalSweepOrigin());
+        assertFalse(crossWindow.hasValidInternalSweepOrigin());
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                HeadersController.getRawTransactionProvenance(savedAndReopened));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                HeadersController.getRawTransactionProvenance(crossWindow));
+
+        transaction.setVersion(transaction.getVersion() + 1);
+        assertFalse(internalSweep.hasValidInternalSweepOrigin());
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                HeadersController.getRawTransactionProvenance(internalSweep));
+    }
+
+    private Transaction finalizedMixedTransaction() throws Exception {
+        JsonObject vector = mixedVector();
+        Wallet wallet = new Wallet("mixed");
+        wallet.getKeystores().addAll(List.of(
+                signingKeystore("A", vector.getAsJsonObject("signer_a"), AntiExfilKeystorePolicy.OPTIONAL),
+                signingKeystore("B", vector.getAsJsonObject("signer_b"), AntiExfilKeystorePolicy.OPTIONAL)));
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH,
+                wallet.getKeystores(), 2));
+        PSBT signed = new PSBT(Utils.hexToBytes(vector.get("signed_psbt_hex").getAsString()), false);
+        wallet.finalise(signed);
+        return signed.extractTransaction();
+    }
+
     private static Keystore compatible(String label, WalletModel model, AntiExfilKeystorePolicy policy) {
         Keystore keystore = new Keystore(label);
         keystore.setWalletModel(model);
@@ -263,6 +339,34 @@ class AntiExfilPolicySelectionTest {
             Map<PSBTInput, Map<TransactionSignature, Keystore>> inputs = new LinkedHashMap<>();
             inputs.put(null, signatures);
             return inputs;
+        }
+    }
+
+    private static final class RawAttributedWallet extends Wallet {
+        private final List<Keystore> signers;
+        private final boolean fail;
+
+        private RawAttributedWallet(List<Keystore> signers) {
+            super("raw");
+            this.signers = signers;
+            this.fail = false;
+        }
+
+        private RawAttributedWallet() {
+            super("raw");
+            this.signers = List.of();
+            this.fail = true;
+        }
+
+        @Override
+        public Map<TransactionInput, Map<TransactionSignature, Keystore>> getSignedKeystores(Transaction transaction) {
+            if(fail) throw new IllegalStateException("attribution failed");
+            List<TransactionSignature> signatures = transaction.getInputs().getFirst().getWitness().getSignatures();
+            Map<TransactionSignature, Keystore> attributed = new LinkedHashMap<>();
+            for(int i = 0; i < signers.size(); i++) {
+                attributed.put(signatures.get(i), signers.get(i));
+            }
+            return Map.of(transaction.getInputs().getFirst(), attributed);
         }
     }
 }

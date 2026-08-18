@@ -168,6 +168,32 @@ public final class AntiExfilPolicy {
                 : ProvenanceStatus.INVALID_PROVENANCE;
     }
 
+    public static ProvenanceStatus evaluateRawTransactionProvenance(Wallet wallet, Transaction transaction) {
+        try {
+            int signatureCount = countFinalSignatures(transaction);
+            if(signatureCount == 0) {
+                return hasSignatures(transaction)
+                        ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
+                        : ProvenanceStatus.PERMITTED;
+            }
+            if(wallet == null) return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+
+            Map<TransactionInput, Map<TransactionSignature, Keystore>> attributed =
+                    wallet.getSignedKeystores(transaction);
+            List<Keystore> signers = attributed.values().stream()
+                    .flatMap(signatures -> signatures.values().stream())
+                    .toList();
+            if(signers.size() != signatureCount) {
+                return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+            }
+            return signers.stream().anyMatch(Keystore::isAntiExfilRequired)
+                    ? ProvenanceStatus.REQUIRED_PROOF_MISSING
+                    : ProvenanceStatus.PERMITTED;
+        } catch(RuntimeException exception) {
+            return ProvenanceStatus.INVALID_PROVENANCE;
+        }
+    }
+
     private static AttributedFinalSignature attributeFinalSignature(Wallet wallet, PSBTInput input,
                                                                       TransactionSignature signature) {
         // A reopened or synthetic PSBT may have no wallet transaction-history nodes. Attribute
@@ -184,6 +210,11 @@ public final class AntiExfilPolicy {
             attributed = new AttributedFinalSignature(signer, derivation.getKey());
         }
         return attributed;
+    }
+
+    private static int countFinalSignatures(Transaction transaction) {
+        if(transaction == null) return 0;
+        return transaction.getInputs().stream().mapToInt(input -> getFinalSignatures(input).size()).sum();
     }
 
     private static List<TransactionSignature> getFinalSignatures(TransactionInput input) {

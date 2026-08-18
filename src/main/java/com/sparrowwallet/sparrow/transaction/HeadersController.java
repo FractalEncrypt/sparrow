@@ -1556,9 +1556,7 @@ public class HeadersController extends TransactionFormController implements Init
 
     private AntiExfilPolicy.ProvenanceStatus currentProvenanceStatus() {
         if(headersForm.getPsbt() == null) {
-            if(headersForm.getBlockTransaction() != null) return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
-            return AntiExfilPolicy.evaluateSignatureProvenance(headersForm.getSigningWallet(), null,
-                    headersForm.getTransaction(), headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+            return getRawTransactionProvenance(headersForm.getTransactionData());
         }
         if(headersForm.getSigningWallet() == null) return headersForm.getPsbt().hasSignatures()
                 ? AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
@@ -1569,6 +1567,14 @@ public class HeadersController extends TransactionFormController implements Init
         }
         return AntiExfilPolicy.evaluateSignatureProvenance(headersForm.getSigningWallet(), headersForm.getPsbt(),
                 headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+    }
+
+    static AntiExfilPolicy.ProvenanceStatus getRawTransactionProvenance(TransactionData transactionData) {
+        if(transactionData.getBlockTransaction() != null || transactionData.hasValidInternalSweepOrigin()) {
+            return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        }
+        return AntiExfilPolicy.evaluateRawTransactionProvenance(transactionData.getSigningWallet(),
+                transactionData.getTransaction());
     }
 
     private void reloadVerifiedAntiExfilSignatures(Wallet signingWallet) {

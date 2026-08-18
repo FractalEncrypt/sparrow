@@ -1550,7 +1550,8 @@ public class AppController implements Initializable {
         PrivateKeySweepDialog dialog = new PrivateKeySweepDialog(wallet);
         dialog.initOwner(rootStack.getScene().getWindow());
         Optional<Transaction> optTransaction = dialog.showAndWait();
-        optTransaction.ifPresent(transaction -> addTransactionTab(null, null, transaction));
+        optTransaction.ifPresent(transaction -> addTransactionTab(null, null, transaction,
+                null, null, null, null, Set.of(), TransactionData.Origin.INTERNAL_SWEEP));
     }
 
     public void showPayNym(ActionEvent event) {
@@ -2069,6 +2070,14 @@ public class AppController implements Initializable {
     private void addTransactionTab(String name, File file, Transaction transaction, PSBT psbt,
                                    BlockTransaction blockTransaction, TransactionView initialView, Integer initialIndex,
                                    Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
+        addTransactionTab(name, file, transaction, psbt, blockTransaction, initialView, initialIndex,
+                verifiedAntiExfilSignatures, TransactionData.Origin.EXTERNAL);
+    }
+
+    private void addTransactionTab(String name, File file, Transaction transaction, PSBT psbt,
+                                   BlockTransaction blockTransaction, TransactionView initialView, Integer initialIndex,
+                                   Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures,
+                                   TransactionData.Origin origin) {
         for(Tab tab : tabs.getTabs()) {
             TabData tabData = (TabData)tab.getUserData();
             if(tabData instanceof TransactionTabData transactionTabData) {
@@ -2153,7 +2162,7 @@ public class AppController implements Initializable {
             } else if(blockTransaction != null) {
                 transactionData = new TransactionData(name, blockTransaction);
             } else {
-                transactionData = new TransactionData(name, transaction);
+                transactionData = new TransactionData(name, transaction, origin);
             }
 
             controller.setTransactionData(transactionData);
