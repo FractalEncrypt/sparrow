@@ -250,6 +250,7 @@ class AntiExfilPolicySelectionTest {
         TransactionData crossWindow = new TransactionData("forwarded", new Transaction(transaction.bitcoinSerialize()));
         assertFalse(savedAndReopened.hasValidInternalSweepOrigin());
         assertFalse(crossWindow.hasValidInternalSweepOrigin());
+        assertTrue(HeadersController.shouldInitializeSignedRawTransactionControls(savedAndReopened));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 HeadersController.getRawTransactionProvenance(savedAndReopened));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
@@ -258,6 +259,7 @@ class AntiExfilPolicySelectionTest {
         //Reference fetching may attach display metadata to an external raw transaction,
         //but that metadata is not wallet-policy attribution and must grant no authority.
         savedAndReopened.setBlockTransaction(new BlockTransaction(reopened.getTxId(), 0, null, null, reopened));
+        assertFalse(HeadersController.shouldInitializeSignedRawTransactionControls(savedAndReopened));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 HeadersController.getRawTransactionProvenance(savedAndReopened));
 

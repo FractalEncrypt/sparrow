@@ -604,9 +604,11 @@ public class HeadersController extends TransactionFormController implements Init
             applyProvenanceQuarantine();
         });
 
-        if(headersForm.getTransactionData().hasValidInternalSweepOrigin()
-                && initializeSignedRawTransactionControls()) {
-            updateFee(headersForm.getTransactionData().getInternalSweepFee());
+        if(shouldInitializeSignedRawTransactionControls(headersForm.getTransactionData())) {
+            boolean controlsInitialized = initializeSignedRawTransactionControls();
+            if(controlsInitialized && headersForm.getTransactionData().hasValidInternalSweepOrigin()) {
+                updateFee(headersForm.getTransactionData().getInternalSweepFee());
+            }
         }
 
         applyProvenanceQuarantine();
@@ -1580,6 +1582,10 @@ public class HeadersController extends TransactionFormController implements Init
         }
         return AntiExfilPolicy.evaluateRawTransactionProvenance(transactionData.getSigningWallet(),
                 transactionData.getTransaction());
+    }
+
+    static boolean shouldInitializeSignedRawTransactionControls(TransactionData transactionData) {
+        return transactionData.getPsbt() == null && transactionData.getBlockTransaction() == null;
     }
 
     private void reloadVerifiedAntiExfilSignatures(Wallet signingWallet) {
