@@ -244,6 +244,8 @@ class AntiExfilPolicySelectionTest {
         assertEquals(114L, internalSweep.getInternalSweepFee());
         assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
                 HeadersController.getRawTransactionProvenance(internalSweep));
+        assertTrue(HeadersController.shouldDisableViewFinal(internalSweep,
+                AntiExfilPolicy.ProvenanceStatus.PERMITTED));
 
         Transaction reopened = new Transaction(transaction.bitcoinSerialize());
         TransactionData savedAndReopened = new TransactionData("reopened", reopened);
@@ -251,6 +253,8 @@ class AntiExfilPolicySelectionTest {
         assertFalse(savedAndReopened.hasValidInternalSweepOrigin());
         assertFalse(crossWindow.hasValidInternalSweepOrigin());
         assertTrue(HeadersController.shouldInitializeSignedRawTransactionControls(savedAndReopened));
+        assertTrue(HeadersController.shouldDisableViewFinal(savedAndReopened,
+                AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 HeadersController.getRawTransactionProvenance(savedAndReopened));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,

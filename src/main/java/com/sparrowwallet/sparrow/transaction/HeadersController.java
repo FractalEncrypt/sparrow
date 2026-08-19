@@ -1606,7 +1606,7 @@ public class HeadersController extends TransactionFormController implements Init
         boolean quarantined = status != AntiExfilPolicy.ProvenanceStatus.PERMITTED;
         finalizeTransaction.setDisable(quarantined);
         broadcastButton.setDisable(quarantined);
-        viewFinalButton.setDisable(quarantined);
+        viewFinalButton.setDisable(shouldDisableViewFinal(headersForm.getTransactionData(), status));
         showTransactionButton.setDisable(quarantined);
         saveFinalButton.setDisable(quarantined);
         String message = quarantined
@@ -1619,6 +1619,12 @@ public class HeadersController extends TransactionFormController implements Init
         broadcastButton.setTooltip(message == null ? null : new Tooltip(message));
         showTransactionButton.setTooltip(message == null ? null : new Tooltip(message));
         saveFinalButton.setTooltip(message == null ? null : new Tooltip(message));
+    }
+
+    static boolean shouldDisableViewFinal(TransactionData transactionData,
+                                          AntiExfilPolicy.ProvenanceStatus status) {
+        return transactionData.getPsbt() == null
+                || status != AntiExfilPolicy.ProvenanceStatus.PERMITTED;
     }
 
     static boolean violatesRequiredSoftwareSigning(Wallet policyWallet, Wallet unencryptedWallet, PSBT psbt) {
