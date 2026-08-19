@@ -207,26 +207,33 @@ class AntiExfilPolicySelectionTest {
         Keystore optionalA = compatible("Optional A", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
         Keystore optionalB = compatible("Optional B", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
         Keystore required = compatible("Required", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.REQUIRED);
+        Wallet partialWallet = new RawAttributedWallet(List.of(optionalA));
+        Wallet permittedWallet = new RawAttributedWallet(List.of(optionalA, optionalB));
+        Wallet requiredWallet = new RawAttributedWallet(List.of(optionalA, required));
 
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 AntiExfilPolicy.evaluateRawTransactionProvenance(null, transaction));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
-                AntiExfilPolicy.evaluateRawTransactionProvenance(
-                        new RawAttributedWallet(List.of(optionalA)), transaction));
+                AntiExfilPolicy.evaluateRawTransactionProvenance(partialWallet, transaction));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
-                AntiExfilPolicy.evaluateRawTransactionProvenance(
-                        new RawAttributedWallet(List.of(optionalA, optionalB)), transaction));
+                AntiExfilPolicy.evaluateRawTransactionProvenance(permittedWallet, transaction));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
-                AntiExfilPolicy.evaluateRawTransactionProvenance(
-                        new RawAttributedWallet(List.of(optionalA, required)), transaction));
+                AntiExfilPolicy.evaluateRawTransactionProvenance(requiredWallet, transaction));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.INVALID_PROVENANCE,
                 AntiExfilPolicy.evaluateRawTransactionProvenance(new RawAttributedWallet(), transaction));
+        assertNull(HeadersController.selectRawTransactionPolicyWallet(List.of(partialWallet), transaction));
+        assertEquals(permittedWallet, HeadersController.selectRawTransactionPolicyWallet(
+                List.of(partialWallet, permittedWallet), transaction));
+        assertEquals(requiredWallet, HeadersController.selectRawTransactionPolicyWallet(
+                List.of(permittedWallet, requiredWallet), transaction));
+        assertEquals(requiredWallet, HeadersController.selectRawTransactionPolicyWallet(
+                List.of(requiredWallet, permittedWallet), transaction));
 
         TransactionData tab = new TransactionData("raw", transaction);
-        tab.setSigningWallet(new RawAttributedWallet(List.of(optionalA, optionalB)));
+        tab.setSigningWallet(permittedWallet);
         assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
                 HeadersController.getRawTransactionProvenance(tab));
-        tab.setSigningWallet(new RawAttributedWallet(List.of(optionalA, required)));
+        tab.setSigningWallet(requiredWallet);
         assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
                 HeadersController.getRawTransactionProvenance(tab));
         tab.setSigningWallet(null);
