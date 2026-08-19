@@ -1575,7 +1575,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     static AntiExfilPolicy.ProvenanceStatus getRawTransactionProvenance(TransactionData transactionData) {
-        if(transactionData.getBlockTransaction() != null || transactionData.hasValidInternalSweepOrigin()) {
+        if(transactionData.hasValidInternalSweepOrigin()) {
             return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
         }
         return AntiExfilPolicy.evaluateRawTransactionProvenance(transactionData.getSigningWallet(),

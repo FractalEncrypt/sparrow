@@ -15,6 +15,7 @@ import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.protocol.TransactionInput;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
+import com.sparrowwallet.drongo.wallet.BlockTransaction;
 import com.sparrowwallet.drongo.wallet.DeterministicSeed;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
@@ -253,6 +254,12 @@ class AntiExfilPolicySelectionTest {
                 HeadersController.getRawTransactionProvenance(savedAndReopened));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 HeadersController.getRawTransactionProvenance(crossWindow));
+
+        //Reference fetching may attach display metadata to an external raw transaction,
+        //but that metadata is not wallet-policy attribution and must grant no authority.
+        savedAndReopened.setBlockTransaction(new BlockTransaction(reopened.getTxId(), 0, null, null, reopened));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                HeadersController.getRawTransactionProvenance(savedAndReopened));
 
         transaction.setVersion(transaction.getVersion() + 1);
         assertFalse(internalSweep.hasValidInternalSweepOrigin());
