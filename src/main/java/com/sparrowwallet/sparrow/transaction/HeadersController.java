@@ -604,6 +604,11 @@ public class HeadersController extends TransactionFormController implements Init
             applyProvenanceQuarantine();
         });
 
+        if(headersForm.getTransactionData().hasValidInternalSweepOrigin()
+                && initializeSignedRawTransactionControls()) {
+            updateFee(headersForm.getTransactionData().getInternalSweepFee());
+        }
+
         applyProvenanceQuarantine();
 
         blockchainForm.setDynamicUpdate(this);
@@ -1746,42 +1751,7 @@ public class HeadersController extends TransactionFormController implements Init
             if(event.getBlockTransaction() != null && (!Sha256Hash.ZERO_HASH.equals(event.getBlockTransaction().getBlockHash()) || headersForm.getBlockTransaction() == null)) {
                 updateBlockchainForm(event.getBlockTransaction(), AppServices.getCurrentBlockHeight());
             } else if(headersForm.getPsbt() == null && headersForm.getBlockTransaction() == null) {
-                boolean isSigned = true;
-                ObservableMap<TransactionSignature, Keystore> signatureKeystoreMap = FXCollections.observableMap(new LinkedHashMap<>());
-                for(TransactionInput txInput : headersForm.getTransaction().getInputs()) {
-                    List<TransactionSignature> signatures = txInput.hasWitness() ? txInput.getWitness().getSignatures() : txInput.getScriptSig().getSignatures();
-
-                    if(signatures.isEmpty()) {
-                        isSigned = false;
-                        break;
-                    }
-
-                    if(signatureKeystoreMap.isEmpty()) {
-                        for(int i = 0; i < signatures.size(); i++) {
-                            signatureKeystoreMap.put(signatures.get(i), new Keystore("Keystore " + (i+1)));
-                        }
-                    }
-                }
-
-                if(isSigned) {
-                    blockchainForm.setVisible(false);
-                    signaturesForm.setVisible(true);
-                    broadcastButtonBox.setVisible(true);
-                    viewFinalButton.setDisable(true);
-
-                    if(headersForm.getSigningWallet() == null) {
-                        for(Wallet wallet : AppServices.get().getOpenWallets().keySet()) {
-                            if(wallet.canSign(headersForm.getTransaction())) {
-                                headersForm.setSigningWallet(wallet);
-                                break;
-                            }
-                        }
-                    }
-
-                    if(headersForm.getSigningWallet() == null) {
-                        signaturesProgressBar.initialize(signatureKeystoreMap, signatureKeystoreMap.size());
-                    }
-                }
+                initializeSignedRawTransactionControls();
             }
 
             if(!event.getInputTransactions().isEmpty()) {
@@ -1797,6 +1767,39 @@ public class HeadersController extends TransactionFormController implements Init
                 headersForm.setWalletTransaction(getWalletTransaction(allFetchedInputTransactions));
             }
         }
+    }
+
+    private boolean initializeSignedRawTransactionControls() {
+        ObservableMap<TransactionSignature, Keystore> signatureKeystoreMap = FXCollections.observableMap(new LinkedHashMap<>());
+        for(TransactionInput txInput : headersForm.getTransaction().getInputs()) {
+            List<TransactionSignature> signatures = txInput.hasWitness()
+                    ? txInput.getWitness().getSignatures()
+                    : txInput.getScriptSig().getSignatures();
+            if(signatures.isEmpty()) return false;
+            if(signatureKeystoreMap.isEmpty()) {
+                for(int i = 0; i < signatures.size(); i++) {
+                    signatureKeystoreMap.put(signatures.get(i), new Keystore("Keystore " + (i + 1)));
+                }
+            }
+        }
+
+        blockchainForm.setVisible(false);
+        signaturesForm.setVisible(true);
+        broadcastButtonBox.setVisible(true);
+        viewFinalButton.setDisable(true);
+
+        if(headersForm.getSigningWallet() == null) {
+            for(Wallet wallet : AppServices.get().getOpenWallets().keySet()) {
+                if(wallet.canSign(headersForm.getTransaction())) {
+                    headersForm.setSigningWallet(wallet);
+                    break;
+                }
+            }
+        }
+        if(headersForm.getSigningWallet() == null) {
+            signaturesProgressBar.initialize(signatureKeystoreMap, signatureKeystoreMap.size());
+        }
+        return true;
     }
 
     @Subscribe

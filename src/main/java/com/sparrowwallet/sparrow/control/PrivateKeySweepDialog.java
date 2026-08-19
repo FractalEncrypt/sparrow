@@ -59,6 +59,7 @@ import static com.sparrowwallet.drongo.protocol.ScriptType.P2TR;
 
 public class PrivateKeySweepDialog extends Dialog<Transaction> {
     private static final Logger log = LoggerFactory.getLogger(PrivateKeySweepDialog.class);
+    private Long transactionFee;
 
     private final TextArea key;
     private final ComboBox<ScriptType> keyScriptType;
@@ -503,10 +504,15 @@ public class PrivateKeySweepDialog extends Dialog<Transaction> {
         }
 
         try {
+            transactionFee = fee;
             setResult(psbt.extractTransaction());
         } catch(PSBTProofException e) {
             AppServices.showErrorDialog("Invalid Silent Payments Transaction", e.getMessage());
         }
+    }
+
+    public Long getTransactionFee() {
+        return transactionFee;
     }
 
     private Address computeSilentPaymentAddress(ECKey privKey, ScriptType scriptType, List<TransactionOutput> txOutputs, SilentPayment silentPayment) {
