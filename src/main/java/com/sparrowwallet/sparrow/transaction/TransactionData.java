@@ -29,6 +29,7 @@ public class TransactionData {
     private final Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures = new LinkedHashSet<>();
     private final Origin origin;
     private final byte[] originTransactionDigest;
+    private final Long originTransactionFee;
 
     private int minInputFetched;
     private int maxInputFetched;
@@ -56,10 +57,10 @@ public class TransactionData {
     }
 
     public TransactionData(String name, Transaction transaction) {
-        this(name, transaction, Origin.EXTERNAL);
+        this(name, transaction, Origin.EXTERNAL, null);
     }
 
-    public TransactionData(String name, Transaction transaction, Origin origin) {
+    public TransactionData(String name, Transaction transaction, Origin origin, Long originTransactionFee) {
         this.name = name;
         this.transaction = transaction;
         this.origin = Objects.requireNonNull(origin);
@@ -69,6 +70,12 @@ public class TransactionData {
         this.originTransactionDigest = origin == Origin.INTERNAL_SWEEP
                 ? Sha256Hash.hash(transaction.bitcoinSerialize())
                 : null;
+        this.originTransactionFee = origin == Origin.INTERNAL_SWEEP
+                ? Objects.requireNonNull(originTransactionFee)
+                : null;
+        if(this.originTransactionFee != null && this.originTransactionFee < 0) {
+            throw new IllegalArgumentException("Internal sweep fee cannot be negative");
+        }
     }
 
     public Transaction getTransaction() {
@@ -82,6 +89,10 @@ public class TransactionData {
     public boolean hasValidInternalSweepOrigin() {
         return origin == Origin.INTERNAL_SWEEP
                 && Arrays.equals(originTransactionDigest, Sha256Hash.hash(transaction.bitcoinSerialize()));
+    }
+
+    public Long getInternalSweepFee() {
+        return hasValidInternalSweepOrigin() ? originTransactionFee : null;
     }
 
     public String getName() {

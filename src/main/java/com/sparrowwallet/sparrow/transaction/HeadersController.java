@@ -616,13 +616,18 @@ public class HeadersController extends TransactionFormController implements Init
             applyProvenanceQuarantine();
         });
 
+        if(headersForm.getTransactionData().hasValidInternalSweepOrigin()
+                && initializeSignedRawTransactionControls()) {
+            updateFee(headersForm.getTransactionData().getInternalSweepFee());
+        }
+
         applyProvenanceQuarantine();
 
         blockchainForm.setDynamicUpdate(this);
 
         //Offline there is no status to fetch, so derive the signed transaction form directly here
         if(headersForm.getPsbt() == null && headersForm.getBlockTransaction() == null && !AppServices.isConnected()) {
-            updateSignedTransactionForm();
+            initializeSignedRawTransactionControls();
         }
     }
 
@@ -1905,7 +1910,7 @@ public class HeadersController extends TransactionFormController implements Init
                 updateBlockchainForm(event.getBlockTransaction(), AppServices.getCurrentBlockHeight());
             } else if(headersForm.getPsbt() == null && headersForm.getBlockTransaction() == null && event.getPageStart() == 0) {
                 //Only the first page asks about the transaction itself, so only its silence says the transaction is not on chain
-                updateSignedTransactionForm();
+                initializeSignedRawTransactionControls();
             }
 
             if(!event.getInputTransactions().isEmpty()) {
@@ -1923,43 +1928,37 @@ public class HeadersController extends TransactionFormController implements Init
         }
     }
 
-    private void updateSignedTransactionForm() {
-        boolean isSigned = true;
+    private boolean initializeSignedRawTransactionControls() {
         ObservableMap<TransactionSignature, Keystore> signatureKeystoreMap = FXCollections.observableMap(new LinkedHashMap<>());
         for(TransactionInput txInput : headersForm.getTransaction().getInputs()) {
-            List<TransactionSignature> signatures = txInput.hasWitness() ? txInput.getWitness().getSignatures() : txInput.getScriptSig().getSignatures();
-
-            if(signatures.isEmpty()) {
-                isSigned = false;
-                break;
-            }
-
+            List<TransactionSignature> signatures = txInput.hasWitness()
+                    ? txInput.getWitness().getSignatures()
+                    : txInput.getScriptSig().getSignatures();
+            if(signatures.isEmpty()) return false;
             if(signatureKeystoreMap.isEmpty()) {
                 for(int i = 0; i < signatures.size(); i++) {
-                    signatureKeystoreMap.put(signatures.get(i), new Keystore("Keystore " + (i+1)));
+                    signatureKeystoreMap.put(signatures.get(i), new Keystore("Keystore " + (i + 1)));
                 }
             }
         }
 
-        if(isSigned) {
-            blockchainForm.setVisible(false);
-            signaturesForm.setVisible(true);
-            broadcastButtonBox.setVisible(true);
-            viewFinalButton.setDisable(true);
+        blockchainForm.setVisible(false);
+        signaturesForm.setVisible(true);
+        broadcastButtonBox.setVisible(true);
+        viewFinalButton.setDisable(true);
 
-            if(headersForm.getSigningWallet() == null) {
-                for(Wallet wallet : AppServices.get().getOpenWallets().keySet()) {
-                    if(wallet.canSign(headersForm.getTransaction())) {
-                        headersForm.setSigningWallet(wallet);
-                        break;
-                    }
+        if(headersForm.getSigningWallet() == null) {
+            for(Wallet wallet : AppServices.get().getOpenWallets().keySet()) {
+                if(wallet.canSign(headersForm.getTransaction())) {
+                    headersForm.setSigningWallet(wallet);
+                    break;
                 }
             }
-
-            if(headersForm.getSigningWallet() == null) {
-                signaturesProgressBar.initialize(signatureKeystoreMap, signatureKeystoreMap.size());
-            }
         }
+        if(headersForm.getSigningWallet() == null) {
+            signaturesProgressBar.initialize(signatureKeystoreMap, signatureKeystoreMap.size());
+        }
+        return true;
     }
 
     @Subscribe

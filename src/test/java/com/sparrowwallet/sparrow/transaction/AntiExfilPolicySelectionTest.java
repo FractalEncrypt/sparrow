@@ -237,9 +237,10 @@ class AntiExfilPolicySelectionTest {
     void internalSweepExemptionIsLocalEphemeralAndDigestBound() throws Exception {
         Transaction transaction = finalizedMixedTransaction();
         TransactionData internalSweep = new TransactionData("sweep", transaction,
-                TransactionData.Origin.INTERNAL_SWEEP);
+                TransactionData.Origin.INTERNAL_SWEEP, 114L);
 
         assertTrue(internalSweep.hasValidInternalSweepOrigin());
+        assertEquals(114L, internalSweep.getInternalSweepFee());
         assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
                 HeadersController.getRawTransactionProvenance(internalSweep));
 
@@ -255,6 +256,7 @@ class AntiExfilPolicySelectionTest {
 
         transaction.setVersion(transaction.getVersion() + 1);
         assertFalse(internalSweep.hasValidInternalSweepOrigin());
+        assertNull(internalSweep.getInternalSweepFee());
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 HeadersController.getRawTransactionProvenance(internalSweep));
     }
