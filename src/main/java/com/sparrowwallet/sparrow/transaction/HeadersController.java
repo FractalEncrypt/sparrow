@@ -1800,14 +1800,8 @@ public class HeadersController extends TransactionFormController implements Init
         broadcastButtonBox.setVisible(true);
         viewFinalButton.setDisable(true);
 
-        if(headersForm.getSigningWallet() == null) {
-            for(Wallet wallet : AppServices.get().getOpenWallets().keySet()) {
-                if(wallet.canSign(headersForm.getTransaction())) {
-                    headersForm.setSigningWallet(wallet);
-                    break;
-                }
-            }
-        }
+        headersForm.setSigningWallet(selectRawTransactionPolicyWallet(
+                AppServices.get().getOpenWallets().keySet(), headersForm.getTransaction()));
         if(headersForm.getSigningWallet() == null) {
             signaturesProgressBar.initialize(signatureKeystoreMap, signatureKeystoreMap.size());
         }
@@ -1839,6 +1833,11 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void openWallets(OpenWalletsEvent event) {
+        if(id.getScene().getWindow().equals(event.getWindow()) && headersForm.getPsbt() == null) {
+            refreshRawTransactionPolicyWallet(event.getWallets());
+            return;
+        }
+
         if(id.getScene().getWindow().equals(event.getWindow()) && headersForm.getPsbt() != null && headersForm.getBlockTransaction() == null) {
             List<Wallet> availableWallets = event.getWallets().stream().filter(wallet -> wallet.canSign(headersForm.getPsbt())).sorted(new WalletSignComparator()).collect(Collectors.toList());
             List<Wallet> signingAllInputsWallets = event.getWallets().stream().filter(wallet -> wallet.canSignAllInputs(headersForm.getPsbt())).sorted(new WalletSignComparator()).collect(Collectors.toList());
@@ -1903,6 +1902,28 @@ public class HeadersController extends TransactionFormController implements Init
                 }
             }
         }
+    }
+
+    static Wallet selectRawTransactionPolicyWallet(Collection<Wallet> wallets, Transaction transaction) {
+        Wallet permittedWallet = null;
+        for(Wallet wallet : wallets) {
+            AntiExfilPolicy.ProvenanceStatus status =
+                    AntiExfilPolicy.evaluateRawTransactionProvenance(wallet, transaction);
+            if(status == AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING) {
+                return wallet;
+            }
+            if(status == AntiExfilPolicy.ProvenanceStatus.PERMITTED && permittedWallet == null) {
+                permittedWallet = wallet;
+            }
+        }
+        return permittedWallet;
+    }
+
+    private void refreshRawTransactionPolicyWallet(Collection<Wallet> wallets) {
+        if(headersForm.getPsbt() != null) return;
+        headersForm.setSigningWallet(selectRawTransactionPolicyWallet(
+                wallets, headersForm.getTransaction()));
+        applyProvenanceQuarantine();
     }
 
     @Subscribe
@@ -2015,6 +2036,9 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void walletHistoryFinished(WalletHistoryFinishedEvent event) {
+        if(headersForm.getPsbt() == null) {
+            refreshRawTransactionPolicyWallet(AppServices.get().getOpenWallets().keySet());
+        }
         if(headersForm.getSigningWallet() != null && headersForm.getSigningWallet().equals(event.getWallet()) && headersForm.isTransactionFinalized()) {
             Sha256Hash txid = headersForm.getTransaction().getTxId();
             BlockTransaction blockTransaction = event.getWallet().getWalletTransaction(txid);
@@ -2027,6 +2051,9 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void walletHistoryChanged(WalletHistoryChangedEvent event) {
+        if(headersForm.getPsbt() == null) {
+            refreshRawTransactionPolicyWallet(AppServices.get().getOpenWallets().keySet());
+        }
         //Update tx and input/output reference labels on history changed wallet if this txid matches and label is null
         if(headersForm.getSigningWallet() != null && !(headersForm.getSigningWallet() instanceof FinalizingPSBTWallet)) {
             Sha256Hash txid = headersForm.getTransaction().getTxId();
