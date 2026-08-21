@@ -96,6 +96,19 @@ class AntiExfilTransportPackageTest {
                 AntiExfilStage.HOST_COMMIT, AntiExfilNetwork.TESTNET4));
     }
 
+    @Test
+    void rejectsSharedHostNegativeVectors() throws Exception {
+        JsonObject vector;
+        try(InputStreamReader reader = new InputStreamReader(
+                getClass().getResourceAsStream("protocol-v1-negative-vectors.json"), StandardCharsets.UTF_8)) {
+            vector = JsonParser.parseReader(reader).getAsJsonObject();
+        }
+        JsonObject testCase = vector.getAsJsonArray("cases").get(0).getAsJsonObject();
+        AntiExfilException exception = assertThrows(AntiExfilException.class,
+                () -> AntiExfilTransportPackage.decode(Utils.hexToBytes(testCase.get("package_hex").getAsString())));
+        assertEquals(AntiExfilException.Code.valueOf(testCase.get("expected_error").getAsString()), exception.getCode());
+    }
+
     private AntiExfilTransportPackage transport(AntiExfilStage stage) {
         return new AntiExfilTransportPackage(message(stage),
                 stage == AntiExfilStage.HOST_COMMIT || stage == AntiExfilStage.HOST_REVEAL ? psbt : null);
