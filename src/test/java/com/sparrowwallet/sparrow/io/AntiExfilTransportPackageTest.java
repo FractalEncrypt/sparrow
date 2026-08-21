@@ -103,10 +103,14 @@ class AntiExfilTransportPackageTest {
                 getClass().getResourceAsStream("protocol-v1-negative-vectors.json"), StandardCharsets.UTF_8)) {
             vector = JsonParser.parseReader(reader).getAsJsonObject();
         }
-        JsonObject testCase = vector.getAsJsonArray("cases").get(0).getAsJsonObject();
-        AntiExfilException exception = assertThrows(AntiExfilException.class,
-                () -> AntiExfilTransportPackage.decode(Utils.hexToBytes(testCase.get("package_hex").getAsString())));
-        assertEquals(AntiExfilException.Code.valueOf(testCase.get("expected_error").getAsString()), exception.getCode());
+        JsonArray cases = vector.getAsJsonArray("cases");
+        assertFalse(cases.isEmpty());
+        for(int index = 0; index < cases.size(); index++) {
+            JsonObject testCase = cases.get(index).getAsJsonObject();
+            AntiExfilException exception = assertThrows(AntiExfilException.class,
+                    () -> AntiExfilTransportPackage.decode(Utils.hexToBytes(testCase.get("package_hex").getAsString())));
+            assertEquals(AntiExfilException.Code.valueOf(testCase.get("expected_error").getAsString()), exception.getCode());
+        }
     }
 
     private AntiExfilTransportPackage transport(AntiExfilStage stage) {
