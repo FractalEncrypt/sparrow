@@ -1528,14 +1528,10 @@ public class HeadersController extends TransactionFormController implements Init
     private void finalizePSBT() {
         if(headersForm.getPsbt() != null && headersForm.getPsbt().isSigned() && !headersForm.getPsbt().isFinalized()) {
             try {
-                AntiExfilPolicy.ProvenanceStatus status = currentProvenanceStatus();
-                if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
-                    AppServices.showErrorDialog("Protected signature rejected",
-                            "This PSBT cannot be finalized because protected-signing provenance failed (" + status + ").");
-                    return;
-                }
+                if(!requirePermittedProvenance("finalized")) return;
                 headersForm.getSigningWallet().finalise(headersForm.getPsbt());
                 EventManager.get().post(new PSBTFinalizedEvent(headersForm.getPsbt()));
+                requirePermittedProvenance("used after finalization");
             } catch(IllegalArgumentException e) {
                 AppServices.showErrorDialog("Cannot finalize PSBT", e.getMessage());
                 throw e;
@@ -1548,6 +1544,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public boolean extractTransaction() {
+        if(!requirePermittedProvenance("viewed as a final transaction")) return false;
         viewFinalButton.setDisable(true);
 
         try {
@@ -1564,10 +1561,7 @@ public class HeadersController extends TransactionFormController implements Init
 
     public void broadcastTransaction(ActionEvent event) {
         broadcastButton.setDisable(true);
-        AntiExfilPolicy.ProvenanceStatus provenanceStatus = currentProvenanceStatus();
-        if(provenanceStatus != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
-            AppServices.showErrorDialog("Broadcast blocked",
-                    "Protected-signing provenance could not be verified (" + provenanceStatus + ").");
+        if(!requirePermittedProvenance("broadcast")) {
             broadcastButton.setDisable(false);
             return;
         }
@@ -1720,18 +1714,32 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     private AntiExfilPolicy.ProvenanceStatus currentProvenanceStatus() {
-        if(headersForm.getPsbt() == null) {
-            return getRawTransactionProvenance(headersForm.getTransactionData());
+        return evaluateTransactionProvenance(headersForm.getTransactionData());
+    }
+
+    static AntiExfilPolicy.ProvenanceStatus evaluateTransactionProvenance(TransactionData transactionData) {
+        if(transactionData.getPsbt() == null) {
+            return getRawTransactionProvenance(transactionData);
         }
-        if(headersForm.getSigningWallet() == null) return headersForm.getPsbt().hasSignatures()
+        if(transactionData.getSigningWallet() == null) return transactionData.getPsbt().hasSignatures()
                 ? AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
                 : AntiExfilPolicy.ProvenanceStatus.PERMITTED;
-        if(!AntiExfilPolicy.requiresProtectedSigning(headersForm.getSigningWallet())
-                && headersForm.getTransactionData().getVerifiedAntiExfilSignatures().isEmpty()) {
+        if(!AntiExfilPolicy.requiresProtectedSigning(transactionData.getSigningWallet())
+                && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
             return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
         }
-        return AntiExfilPolicy.evaluateSignatureProvenance(headersForm.getSigningWallet(), headersForm.getPsbt(),
-                headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+        return AntiExfilPolicy.evaluateSignatureProvenance(transactionData.getSigningWallet(), transactionData.getPsbt(),
+                transactionData.getVerifiedAntiExfilSignatures());
+    }
+
+    private boolean requirePermittedProvenance(String action) {
+        AntiExfilPolicy.ProvenanceStatus status = currentProvenanceStatus();
+        if(status == AntiExfilPolicy.ProvenanceStatus.PERMITTED) return true;
+        applyProvenanceQuarantine();
+        AppServices.showErrorDialog("Protected signature rejected",
+                "This transaction cannot be " + action
+                        + " because protected-signing provenance failed (" + status + ").");
+        return false;
     }
 
     static AntiExfilPolicy.ProvenanceStatus getRawTransactionProvenance(TransactionData transactionData) {
@@ -1799,6 +1807,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void showTransaction(ActionEvent event) {
+        if(!requirePermittedProvenance("shown as a final transaction")) return;
         try {
             Transaction transaction = headersForm.getPsbt().extractTransaction();
             byte[] txBytes = transaction.bitcoinSerialize();
@@ -1815,6 +1824,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void saveFinalTransaction(ActionEvent event) {
+        if(!requirePermittedProvenance("saved as a final transaction")) return;
         Stage window = new Stage();
 
         FileChooser fileChooser = new FileChooser();
@@ -2138,6 +2148,7 @@ public class HeadersController extends TransactionFormController implements Init
 
             signButtonBox.setVisible(false);
             broadcastButtonBox.setVisible(true);
+            applyProvenanceQuarantine();
 
             if(Config.get().hasServer() && !AppServices.isConnected() && !AppServices.isConnecting()) {
                 if(Config.get().getConnectToBroadcast() == null) {

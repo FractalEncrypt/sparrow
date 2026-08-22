@@ -149,6 +149,10 @@ class AntiExfilPolicySelectionTest {
         assertTrue(signed.isFinalized());
         assertNotEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, signed, Set.of(proofA)));
+        TransactionData finalizedTab = new TransactionData("finalized", signed, Set.of(proofA));
+        finalizedTab.setSigningWallet(wallet);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                HeadersController.evaluateTransactionProvenance(finalizedTab));
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, null, signed.extractTransaction(), Set.of(proofA)));
     }
