@@ -77,7 +77,7 @@ class AntiExfilSigningFlowTest {
     }
 
     @Test
-    void postRevealAbandonAndInvalidSignatureAreJournaled() {
+    void postRevealAbandonAndSignerDataFailuresUseNarrowJournaling() {
         FakeSession abandoned = new FakeSession();
         FakeExchange cancelled = new FakeExchange(true, true);
         cancelled.scans.add(Optional.of(transport(message2)));
@@ -88,12 +88,30 @@ class AntiExfilSigningFlowTest {
         assertEquals(List.of(AntiExfilCoordinator.AbortReason.TRANSPORT_FAILED), abandoned.aborts);
 
         FakeSession rejected = new FakeSession();
+        rejected.completionFailure = new AntiExfilException(AntiExfilException.Code.SIGNATURE_INVALID, "invalid signature");
+        FakeExchange invalidSignature = new FakeExchange(true, true);
+        invalidSignature.scans.add(Optional.of(transport(message2)));
+        invalidSignature.scans.add(Optional.of(transport(message4)));
+        assertThrows(AntiExfilException.class,
+                () -> AntiExfilSigningFlow.execute(rejected, AntiExfilNetwork.TESTNET4, invalidSignature));
+        assertEquals(List.of(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED), rejected.aborts);
+
+        FakeSession wrongStageSession = new FakeSession();
         FakeExchange wrongStage = new FakeExchange(true, true);
         wrongStage.scans.add(Optional.of(transport(message2)));
         wrongStage.scans.add(Optional.of(transport(message2)));
         assertThrows(AntiExfilException.class,
-                () -> AntiExfilSigningFlow.execute(rejected, AntiExfilNetwork.TESTNET4, wrongStage));
-        assertEquals(List.of(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED), rejected.aborts);
+                () -> AntiExfilSigningFlow.execute(wrongStageSession, AntiExfilNetwork.TESTNET4, wrongStage));
+        assertTrue(wrongStageSession.aborts.isEmpty());
+
+        FakeSession rejectedOpenings = new FakeSession();
+        rejectedOpenings.openingsFailure = new AntiExfilException(
+                AntiExfilException.Code.TRANSACTION_MISMATCH, "changed transcript");
+        FakeExchange invalidOpenings = new FakeExchange(true);
+        invalidOpenings.scans.add(Optional.of(transport(message2)));
+        assertThrows(AntiExfilException.class,
+                () -> AntiExfilSigningFlow.execute(rejectedOpenings, AntiExfilNetwork.TESTNET4, invalidOpenings));
+        assertEquals(List.of(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED), rejectedOpenings.aborts);
     }
 
     private AntiExfilTransportPackage transport(AntiExfilMessage message) {
@@ -125,14 +143,17 @@ class AntiExfilSigningFlowTest {
     private final class FakeSession implements AntiExfilSigningFlow.Session {
         private AntiExfilCoordinator.Phase phase = AntiExfilCoordinator.Phase.COMMITMENTS_CREATED;
         private final List<AntiExfilCoordinator.AbortReason> aborts = new ArrayList<>();
+        private AntiExfilException openingsFailure;
+        private AntiExfilException completionFailure;
         @Override public AntiExfilCoordinator.Phase phase() { return phase; }
         @Override public byte[] frozenPsbt() { return psbt.clone(); }
         @Override public byte[] hostCommitMessage() { return AntiExfilCodec.encode(message1); }
-        @Override public byte[] acceptOpenings(byte[] message) { assertArrayEquals(AntiExfilCodec.encode(message2), message); phase = AntiExfilCoordinator.Phase.OPENINGS_ACCEPTED; return AntiExfilCodec.encode(message3); }
+        @Override public byte[] acceptOpenings(byte[] message) { assertArrayEquals(AntiExfilCodec.encode(message2), message); if(openingsFailure != null) throw openingsFailure; phase = AntiExfilCoordinator.Phase.OPENINGS_ACCEPTED; return AntiExfilCodec.encode(message3); }
         @Override public byte[] hostRevealMessage() { return AntiExfilCodec.encode(message3); }
-        @Override public AntiExfilCoordinator.Completion complete(byte[] message) { assertArrayEquals(AntiExfilCodec.encode(message4), message); phase = AntiExfilCoordinator.Phase.COMPLETE; return null; }
+        @Override public AntiExfilCoordinator.Completion complete(byte[] message) { assertArrayEquals(AntiExfilCodec.encode(message4), message); if(completionFailure != null) throw completionFailure; phase = AntiExfilCoordinator.Phase.COMPLETE; return null; }
         @Override public AntiExfilCoordinator.Completion completedResult() { return null; }
         @Override public void recordPostRevealAbort(AntiExfilCoordinator.AbortReason reason) { aborts.add(reason); }
+        @Override public void recordSignerDataRejection() { if(aborts.isEmpty()) aborts.add(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED); }
     }
 
     private static final class FakeExchange implements AntiExfilSigningFlow.Exchange {

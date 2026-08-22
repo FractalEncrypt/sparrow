@@ -30,8 +30,13 @@ public final class AntiExfilSigningFlow {
             if(!exchange.display(commit)) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
             Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_OPENINGS, network);
             if(scanned.isEmpty()) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
-            AntiExfilTransportPackage openings = exactIncoming(scanned.get(), AntiExfilStage.SIGNER_OPENINGS, network);
-            revealBytes = session.acceptOpenings(AntiExfilCodec.encode(openings.getMessage()));
+            try {
+                AntiExfilTransportPackage openings = exactIncoming(scanned.get(), AntiExfilStage.SIGNER_OPENINGS, network);
+                revealBytes = session.acceptOpenings(AntiExfilCodec.encode(openings.getMessage()));
+            } catch(AntiExfilException e) {
+                if(AntiExfilCoordinator.isSignerDataRejection(e)) session.recordSignerDataRejection();
+                throw e;
+            }
         } else {
             revealBytes = session.hostRevealMessage();
         }
@@ -54,7 +59,7 @@ public final class AntiExfilSigningFlow {
                 AntiExfilCoordinator.Completion completion = session.complete(AntiExfilCodec.encode(signatures.getMessage()));
                 return new Result(Outcome.COMPLETE, completion);
             } catch(AntiExfilException e) {
-                session.recordPostRevealAbort(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED);
+                if(AntiExfilCoordinator.isSignerDataRejection(e)) session.recordSignerDataRejection();
                 throw e;
             }
         }
@@ -87,6 +92,7 @@ public final class AntiExfilSigningFlow {
         AntiExfilCoordinator.Completion complete(byte[] message);
         AntiExfilCoordinator.Completion completedResult();
         void recordPostRevealAbort(AntiExfilCoordinator.AbortReason reason);
+        void recordSignerDataRejection();
     }
 
     private record CoordinatorSession(AntiExfilCoordinator coordinator) implements Session {
@@ -98,6 +104,7 @@ public final class AntiExfilSigningFlow {
         @Override public AntiExfilCoordinator.Completion complete(byte[] message) { return coordinator.complete(message); }
         @Override public AntiExfilCoordinator.Completion completedResult() { return coordinator.getCompletedResult(); }
         @Override public void recordPostRevealAbort(AntiExfilCoordinator.AbortReason reason) { coordinator.recordPostRevealAbort(reason); }
+        @Override public void recordSignerDataRejection() { coordinator.recordSignerDataRejection(); }
     }
 
     public enum PostRevealAction {
