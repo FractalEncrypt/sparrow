@@ -24,6 +24,7 @@ import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.wallet.BlockTransaction;
 import com.sparrowwallet.drongo.wallet.BlockTransactionHashIndex;
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
+import com.sparrowwallet.drongo.wallet.AntiExfilProfile;
 import com.sparrowwallet.drongo.wallet.DeterministicSeed;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.MasterPrivateExtendedKey;
@@ -355,6 +356,8 @@ public class JsonPersistence implements Persistence {
         gsonBuilder.registerTypeAdapter(Address.class, new AddressDeserializer());
         gsonBuilder.registerTypeAdapter(PolicyType.class, new PolicyTypeSerializer());
         gsonBuilder.registerTypeAdapter(PolicyType.class, new PolicyTypeDeserializer());
+        gsonBuilder.registerTypeAdapter(AntiExfilProfile.class, new AntiExfilProfileSerializer());
+        gsonBuilder.registerTypeAdapter(AntiExfilProfile.class, new AntiExfilProfileDeserializer());
         gsonBuilder.registerTypeAdapter(File.class, new FileSerializer());
         gsonBuilder.registerTypeAdapter(File.class, new FileDeserializer());
         gsonBuilder.registerTypeAdapter(SilentPaymentAddress.class, new SilentPaymentAddressSerializer());
@@ -566,6 +569,24 @@ public class JsonPersistence implements Persistence {
                 case "MULTI" -> PolicyType.MULTI_HD;
                 default -> PolicyType.valueOf(value);
             };
+        }
+    }
+
+    private static class AntiExfilProfileSerializer implements JsonSerializer<AntiExfilProfile> {
+        @Override
+        public JsonElement serialize(AntiExfilProfile profile, Type typeOfSrc, JsonSerializationContext context) {
+            return new JsonPrimitive(profile.getId());
+        }
+    }
+
+    private static class AntiExfilProfileDeserializer implements JsonDeserializer<AntiExfilProfile> {
+        @Override
+        public AntiExfilProfile deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            try {
+                return AntiExfilProfile.fromId(json.getAsString());
+            } catch(IllegalArgumentException e) {
+                throw new JsonParseException(e.getMessage(), e);
+            }
         }
     }
 

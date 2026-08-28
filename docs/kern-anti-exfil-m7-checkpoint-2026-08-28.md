@@ -32,10 +32,13 @@ policy field was set.
 
 ## Persistence and migration
 
-- JSON stores `antiExfilProfile` and migrates legacy supported SeedSigner
-  keystores to `AEXT_V1`; other legacy models remain `NONE`.
+- JSON and database persistence write the canonical lowercase profile IDs
+  (`none`, `aext-v1`, and `in-psbt-v1`). Readers also accept the temporary
+  uppercase enum names written by the initial M7 checkpoint, while unknown
+  profile values fail explicitly. JSON migrates legacy supported SeedSigner
+  keystores to the `aext-v1` profile; other legacy models remain `none`.
 - Database migration V12 adds a non-null string profile. It maps only legacy
-  supported SeedSigner rows to `AEXT_V1` and leaves all other rows `NONE`.
+  supported SeedSigner rows to `aext-v1` and leaves all other rows `none`.
 - Database insert, load, and policy/profile update paths persist both values.
 - Keystore copies and settings/import replacement flows preserve the profile.
 

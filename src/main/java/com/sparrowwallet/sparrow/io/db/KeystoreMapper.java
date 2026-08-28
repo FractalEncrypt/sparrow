@@ -29,7 +29,12 @@ public class KeystoreMapper implements RowMapper<Keystore> {
         keystore.setSilentPaymentScanAddress(rs.getBytes("keystore.silentPaymentScanAddress") == null ? null : SilentPaymentScanAddress.fromBytes(rs.getBytes("keystore.silentPaymentScanAddress")));
         keystore.setDeviceRegistration(rs.getBytes("keystore.deviceRegistration"));
         keystore.setAntiExfilPolicy(AntiExfilKeystorePolicy.values()[rs.getInt("keystore.antiExfilPolicy")]);
-        keystore.setAntiExfilProfile(AntiExfilProfile.valueOf(rs.getString("keystore.antiExfilProfile")));
+        String antiExfilProfile = rs.getString("keystore.antiExfilProfile");
+        try {
+            keystore.setAntiExfilProfile(AntiExfilProfile.fromId(antiExfilProfile));
+        } catch(IllegalArgumentException e) {
+            throw new SQLException("Unknown persisted anti-exfil profile: " + antiExfilProfile, e);
+        }
 
         if(rs.getBytes("masterPrivateExtendedKey.privateKey") != null) {
             MasterPrivateExtendedKey masterPrivateExtendedKey = new MasterPrivateExtendedKey(rs.getBytes("masterPrivateExtendedKey.privateKey"), rs.getBytes("masterPrivateExtendedKey.chainCode"));

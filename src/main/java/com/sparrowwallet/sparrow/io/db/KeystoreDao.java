@@ -79,7 +79,7 @@ public interface KeystoreDao {
                     keystore.getSilentPaymentScanAddress() == null ? null : keystore.getSilentPaymentScanAddress().toBytes(),
                     keystore.getDeviceRegistration(),
                     keystore.getAntiExfilPolicy().ordinal(),
-                    keystore.getAntiExfilProfile().name(),
+                    keystore.getAntiExfilProfile().getId(),
                     keystore.getMasterPrivateExtendedKey() == null ? null : keystore.getMasterPrivateExtendedKey().getId(),
                     keystore.getSeed() == null ? null : keystore.getSeed().getId(), wallet.getId(), i);
             keystore.setId(id);

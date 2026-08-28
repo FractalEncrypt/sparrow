@@ -423,7 +423,7 @@ public class DbPersistence implements Persistence {
                     KeystoreDao keystoreDao = handle.attach(KeystoreDao.class);
                     for(Keystore keystore : dirtyPersistables.antiExfilPolicyKeystores) {
                         keystoreDao.updateAntiExfilPolicy(keystore.getAntiExfilPolicy().ordinal(),
-                                keystore.getAntiExfilProfile().name(), keystore.getId());
+                                keystore.getAntiExfilProfile().getId(), keystore.getId());
                     }
                 }
 
