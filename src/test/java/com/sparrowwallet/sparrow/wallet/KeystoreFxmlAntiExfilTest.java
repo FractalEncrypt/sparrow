@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.wallet;
 
 import com.sparrowwallet.drongo.wallet.Keystore;
+import com.sparrowwallet.drongo.wallet.AntiExfilProfile;
 import com.sparrowwallet.drongo.wallet.WalletModel;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
@@ -53,12 +54,20 @@ class KeystoreFxmlAntiExfilTest {
     void requiredPolicyIsOfferedOnlyForVerifiedDeviceModels() {
         Keystore seedSigner = new Keystore("SeedSigner");
         seedSigner.setWalletModel(WalletModel.SEEDSIGNER);
+        seedSigner.setAntiExfilProfile(AntiExfilProfile.AEXT_V1);
+        Keystore kern = new Keystore("Kern");
+        kern.setWalletModel(WalletModel.KERN);
+        kern.setAntiExfilProfile(AntiExfilProfile.AEXT_V1);
         Keystore passport = new Keystore("Passport");
         passport.setWalletModel(WalletModel.PASSPORT);
         Keystore specter = new Keystore("Specter DIY");
         specter.setWalletModel(WalletModel.SPECTER_DIY);
 
         assertTrue(KeystoreController.supportsRequiredAntiExfil(seedSigner));
+        assertFalse(KeystoreController.supportsRequiredAntiExfil(kern), "Kern remains OPTIONAL until M8");
+        seedSigner.setAntiExfilProfile(AntiExfilProfile.IN_PSBT_V1);
+        assertFalse(KeystoreController.supportsRequiredAntiExfil(seedSigner),
+                "a broad model identity must not authorize a different carriage");
         assertFalse(KeystoreController.supportsRequiredAntiExfil(passport));
         assertFalse(KeystoreController.supportsRequiredAntiExfil(specter));
     }

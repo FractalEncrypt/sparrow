@@ -593,6 +593,12 @@ public class JsonPersistence implements Persistence {
                         : keystore.getWalletModel() == com.sparrowwallet.drongo.wallet.WalletModel.SEEDSIGNER
                         ? AntiExfilKeystorePolicy.OPTIONAL : AntiExfilKeystorePolicy.UNSUPPORTED);
             }
+            if(!jsonObject.has("antiExfilProfile")) {
+                keystore.setAntiExfilProfile(keystore.getWalletModel() == com.sparrowwallet.drongo.wallet.WalletModel.SEEDSIGNER
+                        && keystore.getAntiExfilPolicy().isSupported()
+                        ? com.sparrowwallet.drongo.wallet.AntiExfilProfile.AEXT_V1
+                        : com.sparrowwallet.drongo.wallet.AntiExfilProfile.NONE);
+            }
             return keystore;
         }
     }

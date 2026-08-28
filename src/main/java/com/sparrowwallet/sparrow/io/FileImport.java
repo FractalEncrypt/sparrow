@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.io;
 
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
+import com.sparrowwallet.drongo.wallet.AntiExfilProfile;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.KeystoreSource;
 
@@ -13,10 +14,15 @@ public interface FileImport extends ImportExport {
         return AntiExfilKeystorePolicy.UNSUPPORTED;
     }
 
+    default AntiExfilProfile getDefaultAntiExfilProfile() {
+        return AntiExfilProfile.NONE;
+    }
+
     default Keystore applyScannedKeystoreMetadata(Keystore keystore) {
         keystore.setSource(KeystoreSource.HW_AIRGAPPED);
         keystore.setWalletModel(getWalletModel());
         keystore.setAntiExfilPolicy(getDefaultAntiExfilPolicy());
+        keystore.setAntiExfilProfile(getDefaultAntiExfilProfile());
         return keystore;
     }
 }
