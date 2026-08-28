@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.io;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
 import com.sparrowwallet.drongo.wallet.AntiExfilProfile;
@@ -20,7 +21,7 @@ class AntiExfilPolicyPersistenceTest {
         Gson gson = JsonPersistence.getGson();
         String json = gson.toJson(keystore, Keystore.class);
         assertTrue(json.contains("\"antiExfilPolicy\": \"REQUIRED\""));
-        assertTrue(json.contains("\"antiExfilProfile\": \"AEXT_V1\""));
+        assertTrue(json.contains("\"antiExfilProfile\": \"aext-v1\""));
         assertFalse(json.contains("antiExfilRequired"));
 
         Keystore restored = gson.fromJson(json, Keystore.class);
@@ -28,6 +29,10 @@ class AntiExfilPolicyPersistenceTest {
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, restored.getAntiExfilPolicy());
         assertEquals(WalletModel.SEEDSIGNER, restored.getWalletModel());
         assertEquals(AntiExfilProfile.AEXT_V1, restored.getAntiExfilProfile());
+
+        Keystore temporaryEnumName = gson.fromJson("{\"label\":\"SeedSigner\",\"walletModel\":\"SEEDSIGNER\",\"antiExfilPolicy\":\"OPTIONAL\",\"antiExfilProfile\":\"AEXT_V1\"}", Keystore.class);
+        assertEquals(AntiExfilProfile.AEXT_V1, temporaryEnumName.getAntiExfilProfile());
+        assertThrows(JsonParseException.class, () -> gson.fromJson("{\"label\":\"Unknown\",\"antiExfilProfile\":\"future-v9\"}", Keystore.class));
 
         Keystore legacy = gson.fromJson("{\"label\":\"SeedSigner\",\"walletModel\":\"SEEDSIGNER\"}", Keystore.class);
         assertEquals(AntiExfilKeystorePolicy.OPTIONAL, legacy.getAntiExfilPolicy());
