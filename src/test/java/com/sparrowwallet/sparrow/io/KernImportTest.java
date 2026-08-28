@@ -11,14 +11,15 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class SeedSignerAntiExfilImportTest extends IoTest {
+class KernImportTest extends IoTest {
     @Test
-    void seedSignerImportDefaultsToOptionalWithoutChangingBrand() throws ImportException {
+    void specterCompatibleQrImportsAsKernOptionalAext() throws ImportException {
         Network.set(Network.TESTNET);
         try {
-            Keystore keystore = new SeedSigner().getKeystore(PolicyType.SINGLE_HD, ScriptType.P2WPKH,
+            Keystore keystore = new Kern().getKeystore(PolicyType.SINGLE_HD, ScriptType.P2WPKH,
                     getInputStream("specter-diy-keystore.txt"), null);
-            assertEquals(WalletModel.SEEDSIGNER, keystore.getWalletModel());
+            assertEquals(WalletModel.KERN, keystore.getWalletModel());
+            assertEquals("Kern", keystore.getLabel());
             assertEquals(AntiExfilKeystorePolicy.OPTIONAL, keystore.getAntiExfilPolicy());
             assertEquals(AntiExfilProfile.AEXT_V1, keystore.getAntiExfilProfile());
         } finally {

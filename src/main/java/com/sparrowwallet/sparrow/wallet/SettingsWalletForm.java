@@ -232,8 +232,10 @@ public class SettingsWalletForm extends WalletForm {
             Keystore originalKeystore = original.getKeystores().get(i);
             Keystore changedKeystore = changed.getKeystores().get(i);
 
-            if(originalKeystore.getAntiExfilPolicy() != changedKeystore.getAntiExfilPolicy()) {
+            if(originalKeystore.getAntiExfilPolicy() != changedKeystore.getAntiExfilPolicy()
+                    || originalKeystore.getAntiExfilProfile() != changedKeystore.getAntiExfilProfile()) {
                 originalKeystore.setAntiExfilPolicy(changedKeystore.getAntiExfilPolicy());
+                originalKeystore.setAntiExfilProfile(changedKeystore.getAntiExfilProfile());
                 changedKeystores.add(originalKeystore);
             }
         }

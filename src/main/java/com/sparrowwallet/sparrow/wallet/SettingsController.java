@@ -552,6 +552,7 @@ public class SettingsController extends WalletFormController implements Initiali
                 keystore.setSource(existing.getSource());
                 keystore.setWalletModel(existing.getWalletModel());
                 keystore.setAntiExfilPolicy(existing.getAntiExfilPolicy());
+                keystore.setAntiExfilProfile(existing.getAntiExfilProfile());
                 if(existing.getKeyDerivation().getDerivation().equals(keystore.getKeyDerivation().getDerivation())) {
                     keystore.setExtendedPublicKey(existing.getExtendedPublicKey());
                     keystore.setSilentPaymentScanAddress(existing.getSilentPaymentScanAddress());

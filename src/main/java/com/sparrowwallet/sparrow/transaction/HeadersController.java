@@ -30,6 +30,7 @@ import com.sparrowwallet.sparrow.net.ElectrumServer;
 import com.sparrowwallet.sparrow.io.Storage;
 import com.sparrowwallet.sparrow.payjoin.Payjoin;
 import com.sparrowwallet.sparrow.wallet.Entry;
+import com.sparrowwallet.sparrow.wallet.AntiExfilDeviceRegistry;
 import com.sparrowwallet.sparrow.wallet.HashIndexEntry;
 import com.sparrowwallet.sparrow.wallet.TransactionEntry;
 import javafx.application.Platform;
@@ -588,7 +589,8 @@ public class HeadersController extends TransactionFormController implements Init
             reloadVerifiedAntiExfilSignatures(signingWallet);
             initializeSignButton(signingWallet);
             boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
-                    .anyMatch(Keystore::supportsAntiExfil);
+                    .anyMatch(keystore -> keystore.supportsAntiExfil()
+                            && AntiExfilDeviceRegistry.capability(keystore) != null);
             boolean antiExfilRequired = signingWallet != null && signingWallet.getKeystores().stream()
                     .anyMatch(Keystore::isAntiExfilRequired);
             antiExfilButton.setVisible(hasAntiExfilKeystore);
@@ -1172,6 +1174,7 @@ public class HeadersController extends TransactionFormController implements Init
     static List<Keystore> getAntiExfilKeystores(Wallet wallet) {
         List<Keystore> supportedKeystores = wallet.getKeystores().stream()
                 .filter(Keystore::supportsAntiExfil)
+                .filter(keystore -> AntiExfilDeviceRegistry.capability(keystore) != null)
                 .toList();
         boolean requiredPolicy = supportedKeystores.stream().anyMatch(Keystore::isAntiExfilRequired);
         return supportedKeystores.stream()

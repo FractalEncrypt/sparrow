@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.io;
 
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
+import com.sparrowwallet.drongo.wallet.AntiExfilProfile;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.KeystoreSource;
 import com.sparrowwallet.drongo.wallet.WalletModel;
@@ -13,6 +14,8 @@ class SeedSignerImportPolicyTest {
     void declaresOptionalProtectedSigningForEveryImportTransport() {
         assertEquals(AntiExfilKeystorePolicy.OPTIONAL, new SeedSigner().getDefaultAntiExfilPolicy());
         assertEquals(AntiExfilKeystorePolicy.UNSUPPORTED, new SpecterDIY().getDefaultAntiExfilPolicy());
+        assertEquals(AntiExfilProfile.AEXT_V1, new SeedSigner().getDefaultAntiExfilProfile());
+        assertEquals(AntiExfilProfile.AEXT_V1, new Kern().getDefaultAntiExfilProfile());
     }
 
     @Test
@@ -22,6 +25,7 @@ class SeedSignerImportPolicyTest {
         assertEquals(KeystoreSource.HW_AIRGAPPED, keystore.getSource());
         assertEquals(WalletModel.SEEDSIGNER, keystore.getWalletModel());
         assertEquals(AntiExfilKeystorePolicy.OPTIONAL, keystore.getAntiExfilPolicy());
+        assertEquals(AntiExfilProfile.AEXT_V1, keystore.getAntiExfilProfile());
     }
 
     @Test
@@ -30,5 +34,16 @@ class SeedSignerImportPolicyTest {
 
         assertEquals(WalletModel.SPECTER_DIY, keystore.getWalletModel());
         assertEquals(AntiExfilKeystorePolicy.UNSUPPORTED, keystore.getAntiExfilPolicy());
+        assertEquals(AntiExfilProfile.NONE, keystore.getAntiExfilProfile());
+    }
+
+    @Test
+    void decodedKernQrRetainsKernIdentityAndOptionalAextProfile() {
+        Keystore keystore = new Kern().applyScannedKeystoreMetadata(new Keystore());
+
+        assertEquals(KeystoreSource.HW_AIRGAPPED, keystore.getSource());
+        assertEquals(WalletModel.KERN, keystore.getWalletModel());
+        assertEquals(AntiExfilKeystorePolicy.OPTIONAL, keystore.getAntiExfilPolicy());
+        assertEquals(AntiExfilProfile.AEXT_V1, keystore.getAntiExfilProfile());
     }
 }

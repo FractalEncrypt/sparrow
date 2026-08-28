@@ -15,6 +15,7 @@ import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.protocol.TransactionInput;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.AntiExfilKeystorePolicy;
+import com.sparrowwallet.drongo.wallet.AntiExfilProfile;
 import com.sparrowwallet.drongo.wallet.BlockTransaction;
 import com.sparrowwallet.drongo.wallet.DeterministicSeed;
 import com.sparrowwallet.drongo.wallet.Wallet;
@@ -47,8 +48,8 @@ class AntiExfilPolicySelectionTest {
     @Test
     void requiredCompatibleSignerCannotSilentlyFallBackToOptionalSigner() {
         Wallet wallet = new Wallet("test");
-        Keystore required = compatible("Required", WalletModel.SPECTER_DIY, AntiExfilKeystorePolicy.REQUIRED);
-        Keystore optional = compatible("Optional", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.OPTIONAL);
+        Keystore required = compatible("Required", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.REQUIRED);
+        Keystore optional = compatible("Optional", WalletModel.KERN, AntiExfilKeystorePolicy.OPTIONAL);
         Keystore unsupported = compatible("Unsupported", WalletModel.PASSPORT, AntiExfilKeystorePolicy.UNSUPPORTED);
         wallet.getKeystores().addAll(List.of(required, optional, unsupported));
 
@@ -300,6 +301,9 @@ class AntiExfilPolicySelectionTest {
         Keystore keystore = new Keystore(label);
         keystore.setWalletModel(model);
         keystore.setAntiExfilPolicy(policy);
+        if(model == WalletModel.SEEDSIGNER || model == WalletModel.KERN) {
+            keystore.setAntiExfilProfile(AntiExfilProfile.AEXT_V1);
+        }
         return keystore;
     }
 

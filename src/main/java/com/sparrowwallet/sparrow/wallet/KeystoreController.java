@@ -417,7 +417,7 @@ public class KeystoreController extends WalletFormController implements Initiali
     }
 
     static boolean supportsRequiredAntiExfil(Keystore keystore) {
-        return keystore != null && keystore.getWalletModel() == WalletModel.SEEDSIGNER;
+        return AntiExfilDeviceRegistry.supportsRequired(keystore);
     }
 
     private void setEditable(TextInputControl textInputControl, boolean editable) {
@@ -511,6 +511,7 @@ public class KeystoreController extends WalletFormController implements Initiali
             keystore.setSource(importedKeystore.getSource());
             keystore.setWalletModel(importedKeystore.getWalletModel());
             keystore.setAntiExfilPolicy(importedPolicy);
+            keystore.setAntiExfilProfile(importedKeystore.getAntiExfilProfile());
             keystore.setLabel(importedKeystore.getLabel());
             keystore.setKeyDerivation(importedKeystore.getKeyDerivation());
             keystore.setExtendedPublicKey(importedKeystore.getExtendedPublicKey());
