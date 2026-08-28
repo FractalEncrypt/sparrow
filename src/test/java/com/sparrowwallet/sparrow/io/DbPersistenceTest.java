@@ -243,9 +243,9 @@ public class DbPersistenceTest {
                 }
                 try(ResultSet resultSet = statement.executeQuery("select antiExfilProfile from keystore order by walletModel desc")) {
                     Assertions.assertTrue(resultSet.next());
-                    Assertions.assertEquals(AntiExfilProfile.AEXT_V1.name(), resultSet.getString(1));
+                    Assertions.assertEquals(AntiExfilProfile.AEXT_V1.getId(), resultSet.getString(1));
                     Assertions.assertTrue(resultSet.next());
-                    Assertions.assertEquals(AntiExfilProfile.NONE.name(), resultSet.getString(1));
+                    Assertions.assertEquals(AntiExfilProfile.NONE.getId(), resultSet.getString(1));
                 }
             }
         }
