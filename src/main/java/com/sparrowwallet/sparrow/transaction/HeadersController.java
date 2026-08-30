@@ -1143,7 +1143,8 @@ public class HeadersController extends TransactionFormController implements Init
             }
 
             AntiExfilSigningFlow.Result result = AntiExfilSigningFlow.execute(coordinator, network,
-                    new AntiExfilQrExchange(antiExfilButton.getScene().getWindow()));
+                    new AntiExfilQrExchange(antiExfilButton.getScene().getWindow(),
+                            keystore.getWalletModel().toDisplayString()));
             if(result.outcome() == AntiExfilSigningFlow.Outcome.COMPLETE && result.completion() != null) {
                 if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
                 PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);
