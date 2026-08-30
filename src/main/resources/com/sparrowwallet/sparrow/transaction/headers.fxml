@@ -302,7 +302,7 @@
                             <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="20" icon="LOCK" />
                         </graphic>
                         <tooltip>
-                            <Tooltip text="Sign with SeedSigner using interactive anti-exfil protection"/>
+                            <Tooltip text="Sign with a compatible airgapped device using interactive anti-exfil protection"/>
                         </tooltip>
                     </Button>
                     <Button fx:id="signButton" defaultButton="true" HBox.hgrow="ALWAYS" text="Sign" contentDisplay="TOP" wrapText="true" textAlignment="CENTER" onAction="#signPSBT">
