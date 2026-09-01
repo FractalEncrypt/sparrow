@@ -25,12 +25,8 @@ public class HwAirgappedController extends KeystoreImportDetailController {
     private Accordion importAccordion;
 
     public void initializeView() {
-        List<KeystoreFileImport> fileImporters = Collections.emptyList();
-        if(getMasterController().getWallet().getPolicyType().equals(PolicyType.SINGLE_HD) || getMasterController().getWallet().getPolicyType().equals(PolicyType.SINGLE_SP)) {
-            fileImporters = List.of(new ColdcardSinglesig(), new CoboVaultSinglesig(), new Jade(), new KeystoneSinglesig(), new PassportSinglesig(), new SeedSigner(), new GordianSeedTool(), new SpecterDIY(), new Krux(), new AirGapVault(), new KeycardShellSinglesig(), new EraSinglesig());
-        } else if(getMasterController().getWallet().getPolicyType().equals(PolicyType.MULTI_HD)) {
-            fileImporters = List.of(new Bip129(), new ColdcardMultisig(), new CoboVaultMultisig(), new JadeMultisig(), new KeystoneMultisig(), new PassportMultisig(), new SeedSigner(), new GordianSeedTool(), new SpecterDIY(), new Krux(), new KeycardShellMultisig());
-        }
+        List<KeystoreFileImport> fileImporters = fileImportersFor(
+                getMasterController().getWallet().getPolicyType());
 
         for(KeystoreFileImport importer : fileImporters) {
             if(!importer.isDeprecated() || Config.get().isShowDeprecatedImportExport()) {
@@ -52,5 +48,19 @@ public class HwAirgappedController extends KeystoreImportDetailController {
         }
 
         importAccordion.getPanes().sort(Comparator.comparing(o -> ((TitledDescriptionPane) o).getTitle()));
+    }
+
+    static List<KeystoreFileImport> fileImportersFor(PolicyType policyType) {
+        if(policyType == PolicyType.SINGLE_HD || policyType == PolicyType.SINGLE_SP) {
+            return List.of(new ColdcardSinglesig(), new CoboVaultSinglesig(), new Jade(), new Kern(),
+                    new KeystoneSinglesig(), new PassportSinglesig(), new SeedSigner(), new GordianSeedTool(),
+                    new SpecterDIY(), new Krux(), new AirGapVault(), new KeycardShellSinglesig(), new EraSinglesig());
+        }
+        if(policyType == PolicyType.MULTI_HD) {
+            return List.of(new Bip129(), new ColdcardMultisig(), new CoboVaultMultisig(), new JadeMultisig(),
+                    new Kern(), new KeystoneMultisig(), new PassportMultisig(), new SeedSigner(),
+                    new GordianSeedTool(), new SpecterDIY(), new Krux(), new KeycardShellMultisig());
+        }
+        return Collections.emptyList();
     }
 }
