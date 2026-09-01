@@ -38,6 +38,7 @@
     <logger name="org.springframework.web.socket.sockjs.client.DefaultTransportRequest" level="OFF" />
     <logger name="org.xbill.DNS.dnssec.DnsSecVerifier" level="ERROR" />
     <logger name="electrum.wire" level="OFF" />
+    <logger name="com.sparrowwallet.sparrow.transaction.AntiExfilQrExchange" level="INFO" />
 
     <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator"/>
 
