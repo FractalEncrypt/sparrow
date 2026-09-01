@@ -2,8 +2,10 @@ package com.sparrowwallet.sparrow.transaction;
 
 import com.sparrowwallet.drongo.antiexfil.AntiExfilStage;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AntiExfilQrExchangeTest {
     @Test
@@ -16,5 +18,10 @@ class AntiExfilQrExchangeTest {
                 AntiExfilQrExchange.scanHeader(AntiExfilStage.SIGNER_OPENINGS, "Kern"));
         assertEquals("Scan Kern verified signatures",
                 AntiExfilQrExchange.scanHeader(AntiExfilStage.SIGNER_SIGNATURES, "Kern"));
+    }
+
+    @Test
+    void canonicalPackageEvidenceIsEnabledAtInfoLevel() {
+        assertTrue(LoggerFactory.getLogger(AntiExfilQrExchange.class).isInfoEnabled());
     }
 }
