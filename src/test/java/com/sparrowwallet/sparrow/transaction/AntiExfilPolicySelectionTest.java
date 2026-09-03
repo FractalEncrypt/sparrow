@@ -46,17 +46,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AntiExfilPolicySelectionTest {
     @Test
-    void requiredCompatibleSignerCannotSilentlyFallBackToOptionalSigner() {
+    void mixedRequiredWalletOffersEveryCompatibleProtectedSigner() {
         Wallet wallet = new Wallet("test");
         Keystore required = compatible("Required", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.REQUIRED);
-        Keystore optional = compatible("Optional", WalletModel.KERN, AntiExfilKeystorePolicy.OPTIONAL);
+        Keystore optionalSeedSigner = compatible("Optional SeedSigner", WalletModel.SEEDSIGNER,
+                AntiExfilKeystorePolicy.OPTIONAL);
+        Keystore optionalKern = compatible("Optional Kern", WalletModel.KERN, AntiExfilKeystorePolicy.OPTIONAL);
         Keystore unsupported = compatible("Unsupported", WalletModel.PASSPORT, AntiExfilKeystorePolicy.UNSUPPORTED);
-        wallet.getKeystores().addAll(List.of(required, optional, unsupported));
+        wallet.getKeystores().addAll(List.of(required, optionalSeedSigner, optionalKern, unsupported));
 
-        assertEquals(List.of(required), HeadersController.getAntiExfilKeystores(wallet));
+        assertEquals(List.of(required, optionalSeedSigner, optionalKern),
+                HeadersController.getAntiExfilKeystores(wallet));
 
         required.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
-        assertEquals(List.of(required, optional), HeadersController.getAntiExfilKeystores(wallet));
+        assertEquals(List.of(required, optionalSeedSigner, optionalKern),
+                HeadersController.getAntiExfilKeystores(wallet));
     }
 
     @Test

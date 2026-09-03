@@ -1173,13 +1173,9 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     static List<Keystore> getAntiExfilKeystores(Wallet wallet) {
-        List<Keystore> supportedKeystores = wallet.getKeystores().stream()
+        return wallet.getKeystores().stream()
                 .filter(Keystore::supportsAntiExfil)
                 .filter(keystore -> AntiExfilDeviceRegistry.capability(keystore) != null)
-                .toList();
-        boolean requiredPolicy = supportedKeystores.stream().anyMatch(Keystore::isAntiExfilRequired);
-        return supportedKeystores.stream()
-                .filter(keystore -> !requiredPolicy || keystore.isAntiExfilRequired())
                 .toList();
     }
 
