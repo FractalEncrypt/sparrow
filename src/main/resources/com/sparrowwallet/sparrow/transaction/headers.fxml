@@ -279,7 +279,7 @@
                 <HBox fx:id="signButtonBox" styleClass="signatures-buttons" spacing="20">
                     <SegmentedButton HBox.hgrow="ALWAYS">
                         <buttons>
-                            <ToggleButton HBox.hgrow="ALWAYS" text="Show QR" contentDisplay="TOP" wrapText="true" textAlignment="CENTER" onAction="#showPSBT">
+                            <ToggleButton fx:id="showPsbtButton" HBox.hgrow="ALWAYS" text="Show QR" contentDisplay="TOP" wrapText="true" textAlignment="CENTER" onAction="#showPSBT">
                                 <graphic>
                                     <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="20" icon="QRCODE" />
                                 </graphic>
@@ -293,7 +293,7 @@
                     </SegmentedButton>
                     <SegmentedButton HBox.hgrow="ALWAYS">
                         <buttons>
-                            <ToggleButton HBox.hgrow="ALWAYS" text="Save Transaction" contentDisplay="TOP" wrapText="true" textAlignment="CENTER" onAction="#savePSBT">
+                            <ToggleButton fx:id="savePsbtButton" HBox.hgrow="ALWAYS" text="Save Transaction" contentDisplay="TOP" wrapText="true" textAlignment="CENTER" onAction="#savePSBT">
                                 <graphic>
                                     <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="20" icon="SD_CARD" />
                                 </graphic>

@@ -33,6 +33,21 @@ public final class AntiExfilPolicy {
         return wallet != null && wallet.getKeystores().stream().anyMatch(Keystore::isAntiExfilRequired);
     }
 
+    public static ProvenanceStatus evaluatePsbtEgress(TransactionData transactionData) {
+        if(transactionData == null || transactionData.getPsbt() == null) {
+            return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+        }
+        PSBT psbt = transactionData.getPsbt();
+        Wallet wallet = transactionData.getSigningWallet();
+        if(wallet == null) {
+            return psbt.hasSignatures() ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
+        }
+        if(!requiresProtectedSigning(wallet) && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
+            return ProvenanceStatus.PERMITTED;
+        }
+        return evaluateSignatureProvenance(wallet, psbt, transactionData.getVerifiedAntiExfilSignatures());
+    }
+
     public static boolean hasRequiredSignature(Wallet wallet, PSBT psbt) {
         return wallet.getSignedKeystores(psbt).values().stream()
                 .flatMap(signatures -> signatures.values().stream())

@@ -826,6 +826,7 @@ public class AppController implements Initializable {
         TabData tabData = (TabData)selectedTab.getUserData();
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData)tabData;
+            if(!requirePermittedPsbtEgress(transactionTabData, "save this PSBT")) return;
             if(!verifyPSBT(transactionTabData.getTransactionData().getSigningWallet(), transactionTabData.getPsbt())) {
                 return;
             }
@@ -884,6 +885,7 @@ public class AppController implements Initializable {
         TabData tabData = (TabData)selectedTab.getUserData();
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData)tabData;
+            if(!requirePermittedPsbtEgress(transactionTabData, "copy this PSBT")) return;
             if(!verifyPSBT(transactionTabData.getTransactionData().getSigningWallet(), transactionTabData.getPsbt())) {
                 return;
             }
@@ -901,6 +903,7 @@ public class AppController implements Initializable {
         TabData tabData = (TabData)selectedTab.getUserData();
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData)tabData;
+            if(!requirePermittedPsbtEgress(transactionTabData, "display this PSBT as QR")) return;
             if(!verifyPSBT(transactionTabData.getTransactionData().getSigningWallet(), transactionTabData.getPsbt())) {
                 return;
             }
@@ -912,6 +915,16 @@ public class AppController implements Initializable {
             qrDisplayDialog.initOwner(rootStack.getScene().getWindow());
             qrDisplayDialog.show();
         }
+    }
+
+    private boolean requirePermittedPsbtEgress(TransactionTabData transactionTabData, String action) {
+        AntiExfilPolicy.ProvenanceStatus status =
+                AntiExfilPolicy.evaluatePsbtEgress(transactionTabData.getTransactionData());
+        if(status == AntiExfilPolicy.ProvenanceStatus.PERMITTED) return true;
+        AppServices.showErrorDialog("PSBT export blocked",
+                "Sparrow cannot " + action + " because protected-signing provenance could not be verified ("
+                        + status + ").");
+        return false;
     }
 
     public List<WalletTabData> getOpenWalletTabData() {
