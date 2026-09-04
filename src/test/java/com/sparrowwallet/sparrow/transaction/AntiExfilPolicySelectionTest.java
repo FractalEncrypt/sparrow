@@ -163,6 +163,43 @@ class AntiExfilPolicySelectionTest {
     }
 
     @Test
+    void signedPsbtEgressRequiresCompleteProtectedProvenance() throws Exception {
+        JsonObject vector = mixedVector();
+        JsonObject signerA = vector.getAsJsonObject("signer_a");
+        JsonObject signerB = vector.getAsJsonObject("signer_b");
+        Keystore requiredA = signingKeystore("Required A", signerA, AntiExfilKeystorePolicy.REQUIRED);
+        Keystore requiredB = signingKeystore("Required B", signerB, AntiExfilKeystorePolicy.REQUIRED);
+        Wallet wallet = new Wallet("mixed");
+        wallet.getKeystores().addAll(List.of(requiredA, requiredB));
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH,
+                wallet.getKeystores(), 2));
+        byte[] original = Utils.hexToBytes(vector.get("original_psbt_hex").getAsString());
+        PSBT signed = new PSBT(Utils.hexToBytes(vector.get("signed_psbt_hex").getAsString()), false);
+        VerifiedAntiExfilSignature proofA = new VerifiedAntiExfilSignature(
+                repeat((byte)'m'), Sha256Hash.hash(original), AntiExfilCoordinator.getWalletKeyIdentity(requiredA),
+                0, signed.getTransaction().getInputs().getFirst().getOutpoint().bitcoinSerialize(),
+                Utils.hexToBytes(signerA.get("pubkey").getAsString()),
+                Utils.hexToBytes(vector.get("message_hash").getAsString()), 1,
+                Utils.hexToBytes(vector.get("protected_signature_a_compact").getAsString()));
+
+        TransactionData signedTab = new TransactionData("signed", signed);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
+                AntiExfilPolicy.evaluatePsbtEgress(signedTab));
+        signedTab.setSigningWallet(wallet);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                AntiExfilPolicy.evaluatePsbtEgress(signedTab));
+        signedTab.addVerifiedAntiExfilSignatures(Set.of(proofA));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                AntiExfilPolicy.evaluatePsbtEgress(signedTab));
+
+        requiredB.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                AntiExfilPolicy.evaluatePsbtEgress(signedTab));
+    }
+
+    @Test
     void reloadsOnlyRevalidatedMatchingProofsAndIgnoresUntrustedIndex(@TempDir Path temporary) throws Exception {
         JsonObject vector = mixedVector();
         Keystore signerA = signingKeystore("Required A", vector.getAsJsonObject("signer_a"),

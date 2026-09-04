@@ -30,11 +30,16 @@ class HeadersFxmlAntiExfilTest {
         URL resource = getClass().getResource("headers.fxml");
         assertNotNull(resource);
         AtomicReference<Parent> root = new AtomicReference<>();
+        AtomicReference<Object> showPsbtButton = new AtomicReference<>();
+        AtomicReference<Object> savePsbtButton = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         CountDownLatch loaded = new CountDownLatch(1);
         Platform.runLater(() -> {
             try {
-                root.set(new FXMLLoader(resource).load());
+                FXMLLoader loader = new FXMLLoader(resource);
+                root.set(loader.load());
+                showPsbtButton.set(loader.getNamespace().get("showPsbtButton"));
+                savePsbtButton.set(loader.getNamespace().get("savePsbtButton"));
             } catch(Throwable throwable) {
                 failure.set(throwable);
             } finally {
@@ -46,5 +51,8 @@ class HeadersFxmlAntiExfilTest {
         assertNotNull(root.get());
         assertNotNull(root.get().lookup("#antiExfilButton"));
         assertNotNull(root.get().lookup("#provenanceWarning"));
+        assertNotNull(showPsbtButton.get());
+        assertNotNull(savePsbtButton.get());
+        assertNotNull(root.get().lookup("#payjoinButton"));
     }
 }

@@ -238,6 +238,12 @@ public class HeadersController extends TransactionFormController implements Init
     private Button antiExfilButton;
 
     @FXML
+    private ToggleButton showPsbtButton;
+
+    @FXML
+    private ToggleButton savePsbtButton;
+
+    @FXML
     private HBox broadcastButtonBox;
 
     @FXML
@@ -1040,6 +1046,7 @@ public class HeadersController extends TransactionFormController implements Init
     public void showPSBT(ActionEvent event) {
         ToggleButton toggleButton = (ToggleButton)event.getSource();
         toggleButton.setSelected(false);
+        if(!requirePermittedPsbtEgress("display this PSBT as QR")) return;
 
         //TODO: Remove once Cobo Vault support has been removed
         boolean addLegacyEncodingOption = headersForm.getSigningWallet().getKeystores().stream().anyMatch(keystore -> keystore.getWalletModel().showLegacyQR());
@@ -1227,6 +1234,7 @@ public class HeadersController extends TransactionFormController implements Init
     public void savePSBT(ActionEvent event) {
         ToggleButton toggleButton = (ToggleButton)event.getSource();
         toggleButton.setSelected(false);
+        if(!requirePermittedPsbtEgress("save this PSBT")) return;
 
         Stage window = new Stage();
 
@@ -1563,15 +1571,7 @@ public class HeadersController extends TransactionFormController implements Init
         if(transactionData.getPsbt() == null) {
             return getRawTransactionProvenance(transactionData);
         }
-        if(transactionData.getSigningWallet() == null) return transactionData.getPsbt().hasSignatures()
-                ? AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
-                : AntiExfilPolicy.ProvenanceStatus.PERMITTED;
-        if(!AntiExfilPolicy.requiresProtectedSigning(transactionData.getSigningWallet())
-                && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
-            return AntiExfilPolicy.ProvenanceStatus.PERMITTED;
-        }
-        return AntiExfilPolicy.evaluateSignatureProvenance(transactionData.getSigningWallet(), transactionData.getPsbt(),
-                transactionData.getVerifiedAntiExfilSignatures());
+        return AntiExfilPolicy.evaluatePsbtEgress(transactionData);
     }
 
     private boolean requirePermittedProvenance(String action) {
@@ -1581,6 +1581,16 @@ public class HeadersController extends TransactionFormController implements Init
         AppServices.showErrorDialog("Protected signature rejected",
                 "This transaction cannot be " + action
                         + " because protected-signing provenance failed (" + status + ").");
+        return false;
+    }
+
+    private boolean requirePermittedPsbtEgress(String action) {
+        AntiExfilPolicy.ProvenanceStatus status =
+                AntiExfilPolicy.evaluatePsbtEgress(headersForm.getTransactionData());
+        if(status == AntiExfilPolicy.ProvenanceStatus.PERMITTED) return true;
+        AppServices.showErrorDialog("PSBT export blocked",
+                "Sparrow cannot " + action + " because protected-signing provenance could not be verified ("
+                        + status + ").");
         return false;
     }
 
@@ -1617,6 +1627,9 @@ public class HeadersController extends TransactionFormController implements Init
         viewFinalButton.setDisable(shouldDisableViewFinal(headersForm.getTransactionData(), status));
         showTransactionButton.setDisable(quarantined);
         saveFinalButton.setDisable(quarantined);
+        showPsbtButton.setDisable(quarantined);
+        savePsbtButton.setDisable(quarantined);
+        payjoinButton.setDisable(quarantined);
         String message = quarantined
                 ? "Read-only: open the signing wallet and provide every required protected-signing proof (" + status + ")."
                 : null;
@@ -1627,6 +1640,9 @@ public class HeadersController extends TransactionFormController implements Init
         broadcastButton.setTooltip(message == null ? null : new Tooltip(message));
         showTransactionButton.setTooltip(message == null ? null : new Tooltip(message));
         saveFinalButton.setTooltip(message == null ? null : new Tooltip(message));
+        showPsbtButton.setTooltip(message == null ? null : new Tooltip(message));
+        savePsbtButton.setTooltip(message == null ? null : new Tooltip(message));
+        payjoinButton.setTooltip(message == null ? null : new Tooltip(message));
     }
 
     static boolean shouldDisableViewFinal(TransactionData transactionData,
@@ -1694,6 +1710,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void getPayjoinTransaction(ActionEvent event) {
+        if(!requirePermittedPsbtEgress("send this PSBT to a payjoin endpoint")) return;
         BitcoinURI payjoinURI = getPayjoinURI();
         if(payjoinURI == null) {
             throw new IllegalStateException("No valid Payjoin URI");
