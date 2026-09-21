@@ -12,7 +12,7 @@ public final class AntiExfilDeviceRegistry {
 
     private static final Map<WalletModel, Capability> VERIFIED = Map.of(
             WalletModel.SEEDSIGNER, new Capability(AntiExfilProfile.AEXT_V1, true),
-            WalletModel.KERN, new Capability(AntiExfilProfile.AEXT_V1, false)
+            WalletModel.KERN, new Capability(AntiExfilProfile.AEXT_V1, true)
     );
 
     private AntiExfilDeviceRegistry() {}
