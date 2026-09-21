@@ -246,6 +246,10 @@ public class HeadersController extends TransactionFormController implements Init
     @FXML
     private HBox broadcastButtonBox;
 
+    @FXML private VBox protectedCompletionBox;
+    @FXML private ToggleButton protectedSavePsbtButton;
+    @FXML private Button finalizeProtectedButton;
+
     @FXML
     private Label provenanceWarning;
 
@@ -271,11 +275,15 @@ public class HeadersController extends TransactionFormController implements Init
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         EventManager.get().register(this);
+        finalizeProtectedButton.addEventFilter(KeyEvent.ANY, event -> {
+            if(event.getCode() == KeyCode.ENTER) event.consume();
+        });
     }
 
     void setModel(HeadersForm form) {
         this.headersForm = form;
         initializeView();
+        refreshProtectedCompletion();
     }
 
     @Override
@@ -505,6 +513,7 @@ public class HeadersController extends TransactionFormController implements Init
         broadcastProgressBar.managedProperty().bind(broadcastProgressBar.visibleProperty());
         broadcastProgressBar.visibleProperty().bind(signaturesProgressBar.visibleProperty().not());
 
+        protectedCompletionBox.managedProperty().bind(protectedCompletionBox.visibleProperty());
         broadcastButton.managedProperty().bind(broadcastButton.visibleProperty());
         showTransactionButton.managedProperty().bind(showTransactionButton.visibleProperty());
         showTransactionButton.visibleProperty().bind(broadcastButton.visibleProperty().not());
@@ -525,6 +534,7 @@ public class HeadersController extends TransactionFormController implements Init
         signaturesForm.setVisible(false);
         signButtonBox.setVisible(false);
         broadcastButtonBox.setVisible(false);
+        protectedCompletionBox.setVisible(false);
 
         if(headersForm.getBlockTransaction() != null) {
             updateBlockchainForm(headersForm.getBlockTransaction(), AppServices.getCurrentBlockHeight());
@@ -591,7 +601,10 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
-            if(signingWallet == null) return;
+            if(signingWallet == null) {
+                applyProvenanceQuarantine();
+                return;
+            }
             reloadVerifiedAntiExfilSignatures(signingWallet);
             initializeSignButton(signingWallet);
             boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
@@ -610,6 +623,7 @@ public class HeadersController extends TransactionFormController implements Init
 
             learnSilentPaymentAddresses(signingWallet, headersForm.getPsbt());
             applyProvenanceQuarantine();
+            refreshProtectedCompletion();
         });
 
         if(shouldInitializeSignedRawTransactionControls(headersForm.getTransactionData())) {
@@ -1236,17 +1250,7 @@ public class HeadersController extends TransactionFormController implements Init
         toggleButton.setSelected(false);
         if(!requirePermittedPsbtEgress("save this PSBT")) return;
 
-        Stage window = new Stage();
-
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Save PSBT");
-
-        if(headersForm.getName() != null && !headersForm.getName().isEmpty()) {
-            fileChooser.setInitialFileName(headersForm.getName().replace('/', '_') + ".psbt");
-        }
-
-        AppServices.moveToActiveWindowScreen(window, 800, 450);
-        File file = fileChooser.showSaveDialog(window);
+        File file = choosePsbtExportFile();
         if(file != null) {
             if(!file.getName().toLowerCase(Locale.ROOT).endsWith(".psbt")) {
                 file = new File(file.getAbsolutePath() + ".psbt");
@@ -1259,6 +1263,21 @@ public class HeadersController extends TransactionFormController implements Init
                 AppServices.showErrorDialog("Error saving PSBT", "Cannot write to " + file.getAbsolutePath());
             }
         }
+    }
+
+    File choosePsbtExportFile() {
+        Stage window = new Stage();
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Save PSBT");
+
+        if(headersForm.getName() != null && !headersForm.getName().isEmpty()) {
+            fileChooser.setInitialFileName(headersForm.getName().replace('/', '_') + ".psbt");
+        }
+
+        AppServices.moveToActiveWindowScreen(window, 800, 450);
+        File file = fileChooser.showSaveDialog(window);
+        return file;
     }
 
     public void loadPSBT(ActionEvent event) {
@@ -1376,13 +1395,130 @@ public class HeadersController extends TransactionFormController implements Init
     private void updateSignedKeystores(Wallet signingWallet) {
         Map<?, Map<TransactionSignature, Keystore>> signedKeystoresMap = headersForm.getPsbt() == null ? signingWallet.getSignedKeystores(headersForm.getTransaction()) : signingWallet.getSignedKeystores(headersForm.getPsbt());
         Optional<Map<TransactionSignature, Keystore>> optSignedKeystores = signedKeystoresMap.values().stream().filter(map -> !map.isEmpty()).min(Comparator.comparingInt(Map::size));
+        headersForm.getTransactionData().hasProtectedSigningContext();
         optSignedKeystores.ifPresent(signedKeystores -> {
             headersForm.getSignatureKeystoreMap().keySet().retainAll(signedKeystores.keySet());
             headersForm.getSignatureKeystoreMap().putAll(signedKeystores);
         });
+        refreshProtectedCompletion();
+    }
+
+    void refreshProtectedCompletion() {
+        TransactionData data = headersForm.getTransactionData();
+        boolean pending = data.isProtectedFinalizationPending();
+        boolean complete = pending && data.getPsbt().isSigned();
+        boolean permitted = pending && currentProvenanceStatus() == AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        protectedCompletionBox.setVisible(complete && permitted);
+        protectedSavePsbtButton.setDisable(!permitted);
+        finalizeProtectedButton.setDisable(!complete || !permitted);
+        if(pending) {
+            broadcastButtonBox.setVisible(false);
+            signButtonBox.setVisible(!complete);
+            if(complete) {
+                finalizeButtonBox.setVisible(false);
+                signaturesForm.setVisible(true);
+            }
+            if(!permitted) {
+                provenanceWarning.setText("Read-only: open the signing wallet and provide every required protected-signing proof ("
+                        + currentProvenanceStatus() + ").");
+                provenanceWarning.setVisible(true);
+                signButton.setDisable(true);
+                antiExfilButton.setDisable(true);
+                showPsbtButton.setDisable(true);
+                savePsbtButton.setDisable(true);
+            } else {
+                provenanceWarning.setVisible(false);
+                signButton.setDisable(false);
+                initializeSignButton(data.getSigningWallet());
+                antiExfilButton.setDisable(false);
+                showPsbtButton.setDisable(false);
+                savePsbtButton.setDisable(false);
+            }
+        }
+    }
+
+    private boolean blockPendingProtectedAction() {
+        if(!headersForm.getTransactionData().isProtectedFinalizationPending()) return false;
+        protectedCompletionError("Finalize the signed PSBT explicitly before using final-transaction actions.");
+        return true;
+    }
+
+    void protectedCompletionError(String message) {
+        AppServices.showErrorDialog("Protected signing", message);
+    }
+
+    static Alert protectedFinalizationDialog() {
+        ButtonType finalize = new ButtonType("Finalize", ButtonBar.ButtonData.OK_DONE);
+        Alert dialog = new Alert(Alert.AlertType.CONFIRMATION,
+                "This will finalize the signed PSBT. It will not connect to a server or broadcast. "
+                        + "Save the PSBT first if you need the unfinalized version.", ButtonType.CANCEL, finalize);
+        dialog.setTitle("Finalize signed PSBT?");
+        dialog.setHeaderText(null);
+        ((Button)dialog.getDialogPane().lookupButton(finalize)).setDefaultButton(false);
+        ((Button)dialog.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        dialog.getDialogPane().addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if(event.getCode() == KeyCode.ENTER) {
+                event.consume();
+                dialog.setResult(ButtonType.CANCEL);
+                dialog.close();
+            }
+        });
+        return dialog;
+    }
+
+    boolean confirmProtectedFinalization() {
+        Alert dialog = protectedFinalizationDialog();
+        if(finalizeProtectedButton.getScene() != null && finalizeProtectedButton.getScene().getWindow() != null) {
+            dialog.initOwner(finalizeProtectedButton.getScene().getWindow());
+        }
+        return dialog.showAndWait().filter(button -> button.getButtonData() == ButtonBar.ButtonData.OK_DONE).isPresent();
+    }
+
+    private static List<String> finalizationWalletState(Wallet wallet) {
+        List<String> state = new ArrayList<>();
+        state.add(wallet.getPolicyType() + ":" + wallet.getScriptType() + ":" + wallet.getDefaultPolicy());
+        for(Keystore key : wallet.getKeystores()) {
+            state.add(key.getSource() + ":" + key.getWalletModel() + ":" + key.getAntiExfilProfile() + ":"
+                    + key.getAntiExfilPolicy() + ":" + key.getExtendedPublicKey() + ":"
+                    + (key.getKeyDerivation() == null ? "" : key.getKeyDerivation().getMasterFingerprint()
+                    + ":" + key.getKeyDerivation().getDerivation()));
+        }
+        return state;
+    }
+
+    public void finalizeProtectedTransaction(ActionEvent event) {
+        TransactionData data = headersForm.getTransactionData();
+        PSBT psbt = data.getPsbt();
+        Wallet wallet = data.getSigningWallet();
+        if(!data.isProtectedFinalizationPending() || !psbt.isSigned() || wallet == null
+                || currentProvenanceStatus() != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+            protectedCompletionError("Protected completion is not ready for finalization.");
+            return;
+        }
+        byte[] before = psbt.serialize();
+        Set<VerifiedAntiExfilSignature> proofs = Set.copyOf(data.getVerifiedAntiExfilSignatures());
+        List<String> walletState = finalizationWalletState(wallet);
+        if(!confirmProtectedFinalization()) return;
+        if(headersForm.getTransactionData() != data || data.getPsbt() != psbt || data.getSigningWallet() != wallet
+                || !Arrays.equals(before, psbt.serialize()) || !proofs.equals(data.getVerifiedAntiExfilSignatures())
+                || !walletState.equals(finalizationWalletState(wallet))
+                || currentProvenanceStatus() != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+            protectedCompletionError("Transaction changed. Review it again before finalizing.");
+            return;
+        }
+        finalizePermittedPsbt();
+        refreshProtectedCompletion();
     }
 
     private void finalizePSBT() {
+        if(headersForm.getTransactionData().isProtectedFinalizationPending()) {
+            refreshProtectedCompletion();
+            return;
+        }
+        finalizePermittedPsbt();
+    }
+
+    private void finalizePermittedPsbt() {
         if(headersForm.getPsbt() != null && headersForm.getPsbt().isSigned() && !headersForm.getPsbt().isFinalized()) {
             try {
                 if(!requirePermittedProvenance("finalized")) return;
@@ -1401,6 +1537,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public boolean extractTransaction() {
+        if(blockPendingProtectedAction()) return false;
         if(!requirePermittedProvenance("viewed as a final transaction")) return false;
         viewFinalButton.setDisable(true);
 
@@ -1417,6 +1554,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void broadcastTransaction(ActionEvent event) {
+        if(blockPendingProtectedAction()) return;
         broadcastButton.setDisable(true);
         if(!requirePermittedProvenance("broadcast")) {
             broadcastButton.setDisable(false);
@@ -1622,6 +1760,8 @@ public class HeadersController extends TransactionFormController implements Init
         if(!signedPayload) return;
         AntiExfilPolicy.ProvenanceStatus status = currentProvenanceStatus();
         boolean quarantined = status != AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        protectedSavePsbtButton.setDisable(quarantined);
+        finalizeProtectedButton.setDisable(quarantined);
         finalizeTransaction.setDisable(quarantined);
         broadcastButton.setDisable(quarantined);
         viewFinalButton.setDisable(shouldDisableViewFinal(headersForm.getTransactionData(), status));
@@ -1643,6 +1783,7 @@ public class HeadersController extends TransactionFormController implements Init
         showPsbtButton.setTooltip(message == null ? null : new Tooltip(message));
         savePsbtButton.setTooltip(message == null ? null : new Tooltip(message));
         payjoinButton.setTooltip(message == null ? null : new Tooltip(message));
+        refreshProtectedCompletion();
     }
 
     static boolean shouldDisableViewFinal(TransactionData transactionData,
@@ -1665,6 +1806,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void showTransaction(ActionEvent event) {
+        if(blockPendingProtectedAction()) return;
         if(!requirePermittedProvenance("shown as a final transaction")) return;
         try {
             Transaction transaction = headersForm.getPsbt().extractTransaction();
@@ -1682,6 +1824,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void saveFinalTransaction(ActionEvent event) {
+        if(blockPendingProtectedAction()) return;
         if(!requirePermittedProvenance("saved as a final transaction")) return;
         Stage window = new Stage();
 
@@ -1710,6 +1853,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void getPayjoinTransaction(ActionEvent event) {
+        if(blockPendingProtectedAction()) return;
         if(!requirePermittedPsbtEgress("send this PSBT to a payjoin endpoint")) return;
         BitcoinURI payjoinURI = getPayjoinURI();
         if(payjoinURI == null) {
@@ -1887,6 +2031,10 @@ public class HeadersController extends TransactionFormController implements Init
             headersForm.getAvailableWallets().keySet().retainAll(availableWallets);
             headersForm.getAvailableWallets().putAll(availableWalletsMap);
             signingWallet.setItems(FXCollections.observableList(availableWallets));
+            if(headersForm.getTransactionData().hasProtectedSigningContext()
+                    && !availableWallets.contains(headersForm.getSigningWallet())) {
+                headersForm.setSigningWallet(null);
+            }
 
             if(!availableWallets.isEmpty()) {
                 if(!headersForm.isEditable() && (availableWallets.size() == 1 || headersForm.getPsbt().isSigned())) {
@@ -1901,6 +2049,7 @@ public class HeadersController extends TransactionFormController implements Init
                     if(headersForm.getPsbt().isSigned()) {
                         finalizePSBT();
                         broadcastButtonBox.setVisible(true);
+                        refreshProtectedCompletion();
                     } else {
                         signButtonBox.setVisible(true);
                     }
@@ -1974,6 +2123,7 @@ public class HeadersController extends TransactionFormController implements Init
 
             if(event.getPsbt().isSigned()) {
                 broadcastButtonBox.setVisible(true);
+                refreshProtectedCompletion();
             } else {
                 signButtonBox.setVisible(true);
                 event.getPsbt().addKeyPathInformation(event.getSigningWallet());
@@ -1983,7 +2133,7 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void psbtCombined(PSBTCombinedEvent event) {
-        if(event.getPsbt().equals(headersForm.getPsbt())) {
+        if(event.getPsbt() == headersForm.getPsbt()) {
             learnSilentPaymentAddresses(headersForm.getSigningWallet(), headersForm.getPsbt());
             if(headersForm.getSigningWallet() != null) {
                 updateSignedKeystores(headersForm.getSigningWallet());
@@ -1998,7 +2148,11 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void psbtFinalized(PSBTFinalizedEvent event) {
-        if(event.getPsbt().equals(headersForm.getPsbt())) {
+        if(event.getPsbt() == headersForm.getPsbt()) {
+            if(headersForm.getTransactionData().isProtectedFinalizationPending()) {
+                refreshProtectedCompletion();
+                return;
+            }
             learnSilentPaymentAddresses(headersForm.getSigningWallet(), headersForm.getPsbt());
             if(headersForm.getSigningWallet() != null) {
                 updateSignedKeystores(headersForm.getSigningWallet());
@@ -2008,6 +2162,8 @@ public class HeadersController extends TransactionFormController implements Init
             broadcastButtonBox.setVisible(true);
             applyProvenanceQuarantine();
 
+            protectedCompletionBox.setVisible(false);
+            if(headersForm.getTransactionData().hasProtectedSigningContext()) return;
             if(Config.get().hasServer() && !AppServices.isConnected() && !AppServices.isConnecting()) {
                 if(Config.get().getConnectToBroadcast() == null) {
                     Platform.runLater(() -> {
@@ -2029,7 +2185,8 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void keystoreSigned(KeystoreSignedEvent event) {
-        if(headersForm.getSignedKeystores().contains(event.getKeystore()) && headersForm.getPsbt() != null) {
+        if(event.getTransactionContext() == headersForm.getSignatureKeystoreMap()
+                && headersForm.getSignedKeystores().contains(event.getKeystore()) && headersForm.getPsbt() != null) {
             //Attempt to finalize PSBT - will do nothing if all inputs are not signed
             finalizePSBT();
         }
@@ -2044,7 +2201,7 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void transactionExtracted(TransactionExtractedEvent event) {
-        if(event.getPsbt().equals(headersForm.getPsbt())) {
+        if(event.getPsbt() == headersForm.getPsbt()) {
             updateTxId();
             updateType();
             updateSize();
@@ -2144,7 +2301,7 @@ public class HeadersController extends TransactionFormController implements Init
 
     @Subscribe
     public void psbtReordered(PSBTReorderedEvent event) {
-        if(event.getPsbt().equals(headersForm.getPsbt())) {
+        if(event.getPsbt() == headersForm.getPsbt()) {
             updateTxId();
             headersForm.setWalletTransaction(getWalletTransaction(headersForm.getInputTransactions()));
         }

@@ -42,6 +42,10 @@ public final class AntiExfilPolicy {
         if(wallet == null) {
             return psbt.hasSignatures() ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
         }
+        if(transactionData.hasVerifiedProtectedContext() && psbt.hasSignatures()
+                && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
+            return ProvenanceStatus.INVALID_PROVENANCE;
+        }
         if(!requiresProtectedSigning(wallet) && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
             return ProvenanceStatus.PERMITTED;
         }

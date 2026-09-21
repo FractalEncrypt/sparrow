@@ -2250,10 +2250,7 @@ public class AppController implements Initializable {
             if(!psbt.isFinalized()) {
                 //As per BIP174, combine PSBTs with matching transactions so long as they are not yet finalized
                 try {
-                    currentPsbt.verifyCombinedSignatures(psbt);
-                    currentPsbt.combine(psbt);
-                    transactionTabData.getTransactionData().replaceVerifiedAntiExfilSignatures(
-                            AntiExfilPolicy.retainMatchingProofs(signingWallet, currentPsbt, candidateProofs));
+                    transactionTabData.getTransactionData().combineVerifiedPsbt(psbt, candidateProofs);
                     setTabName(tab, name);
                     EventManager.get().post(new PSBTCombinedEvent(currentPsbt));
                 } catch(PSBTSignatureException e) {

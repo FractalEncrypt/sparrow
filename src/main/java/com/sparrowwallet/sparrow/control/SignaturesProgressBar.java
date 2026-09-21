@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class SignaturesProgressBar extends SegmentedBar<SignaturesProgressBar.SignatureProgressSegment> {
+    private ObservableMap<TransactionSignature, Keystore> observedMap;
+    private MapChangeListener<TransactionSignature, Keystore> mapListener;
     public SignaturesProgressBar() {
         setOrientation(Orientation.HORIZONTAL);
         setSegmentViewFactory(SignatureProgressSegmentView::new);
@@ -31,6 +33,8 @@ public class SignaturesProgressBar extends SegmentedBar<SignaturesProgressBar.Si
 
     public void initialize(ObservableMap<TransactionSignature, Keystore> signatureKeystoreMap, int threshold) {
         getStyleClass().add("signatures-progress-bar");
+        if(observedMap != null && mapListener != null) observedMap.removeListener(mapListener);
+        observedMap = signatureKeystoreMap;
         getSegments().clear();
 
         List<Keystore> signedKeystores = new ArrayList<>(signatureKeystoreMap.values());
@@ -38,13 +42,13 @@ public class SignaturesProgressBar extends SegmentedBar<SignaturesProgressBar.Si
         double segmentSize = 100d / numSegments;
         for(int i = 0; i < numSegments; i++) {
             if(i < signedKeystores.size()) {
-                getSegments().add(new SignatureProgressSegment(segmentSize, i, signedKeystores.get(i)));
+                getSegments().add(new SignatureProgressSegment(segmentSize, i, signedKeystores.get(i), signatureKeystoreMap));
             } else {
-                getSegments().add(new SignatureProgressSegment(segmentSize, i, null));
+                getSegments().add(new SignatureProgressSegment(segmentSize, i, null, signatureKeystoreMap));
             }
         }
 
-        signatureKeystoreMap.addListener((MapChangeListener<TransactionSignature, Keystore>) c -> {
+        mapListener = c -> {
             List<Keystore> newSignedKeystores = new ArrayList<>(c.getMap().values());
             int newNumSegments = Math.max(threshold, newSignedKeystores.size());
             double newSegmentSize = 100d / newNumSegments;
@@ -69,20 +73,27 @@ public class SignaturesProgressBar extends SegmentedBar<SignaturesProgressBar.Si
                         existingSegment.setValue(newSegmentSize);
                     }
 
-                    SignaturesProgressBar.SignatureProgressSegment newSegment = new SignatureProgressSegment(newSegmentSize, i, null);
+                    SignaturesProgressBar.SignatureProgressSegment newSegment = new SignatureProgressSegment(newSegmentSize, i, null, signatureKeystoreMap);
                     getSegments().add(newSegment);
                     newSegment.setKeystore(signedKeystore);
                 }
             }
-        });
+        };
+        signatureKeystoreMap.addListener(mapListener);
     }
 
     public static class SignatureProgressSegment extends SegmentedBar.Segment {
         private final SimpleObjectProperty<Keystore> keystoreProperty;
         private final int index;
+        private final Object transactionContext;
 
         public SignatureProgressSegment(double value, int index, Keystore keystore) {
+            this(value, index, keystore, null);
+        }
+
+        public SignatureProgressSegment(double value, int index, Keystore keystore, Object transactionContext) {
             super(value);
+            this.transactionContext = transactionContext;
             this.index = index;
 
             this.keystoreProperty = new SimpleObjectProperty<>(this, "keystore", null);
@@ -110,7 +121,7 @@ public class SignaturesProgressBar extends SegmentedBar<SignaturesProgressBar.Si
         }
 
         public void signatureCompleted() {
-            EventManager.get().post(new KeystoreSignedEvent(getKeystore()));
+            EventManager.get().post(new KeystoreSignedEvent(getKeystore(), transactionContext));
         }
     }
 
