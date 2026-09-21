@@ -163,7 +163,7 @@ class AntiExfilPolicySelectionTest {
     }
 
     @Test
-    void signedPsbtEgressRequiresCompleteProtectedProvenance() throws Exception {
+    void signedPsbtEgressRequiresCompleteProtectedProvenance(@TempDir Path temporary) throws Exception {
         JsonObject vector = mixedVector();
         JsonObject signerA = vector.getAsJsonObject("signer_a");
         JsonObject signerB = vector.getAsJsonObject("signer_b");
@@ -177,12 +177,12 @@ class AntiExfilPolicySelectionTest {
                 wallet.getKeystores(), 2));
         byte[] original = Utils.hexToBytes(vector.get("original_psbt_hex").getAsString());
         PSBT signed = new PSBT(Utils.hexToBytes(vector.get("signed_psbt_hex").getAsString()), false);
-        VerifiedAntiExfilSignature proofA = new VerifiedAntiExfilSignature(
-                repeat((byte)'m'), Sha256Hash.hash(original), AntiExfilCoordinator.getWalletKeyIdentity(requiredA),
-                0, signed.getTransaction().getInputs().getFirst().getOutpoint().bitcoinSerialize(),
-                Utils.hexToBytes(signerA.get("pubkey").getAsString()),
-                Utils.hexToBytes(vector.get("message_hash").getAsString()), 1,
-                Utils.hexToBytes(vector.get("protected_signature_a_compact").getAsString()));
+        AntiExfilCoordinator coordinator = createDeterministic(temporary.resolve("egress.aexs"),
+                temporary.resolve("egress.aexj"), original, requiredA);
+        coordinator.acceptOpenings(Utils.hexToBytes(vector.get("message_2_hex").getAsString()));
+        VerifiedAntiExfilSignature proofA = coordinator
+                .complete(Utils.hexToBytes(vector.get("message_4_hex").getAsString()))
+                .getVerifiedSignatures().iterator().next();
 
         TransactionData signedTab = new TransactionData("signed", signed);
         assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE,
