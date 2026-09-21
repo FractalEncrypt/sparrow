@@ -27,6 +27,9 @@ public class TransactionData {
     private Map<Sha256Hash, BlockTransaction> inputTransactions;
     private List<BlockTransaction> outputTransactions;
     private final Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures = new LinkedHashSet<>();
+    // Per-transaction stop on automatic advancement, never a provenance authorization.
+    private boolean protectedSigningContext;
+    private boolean verifiedProtectedContext;
     private final Origin origin;
     private final byte[] originTransactionDigest;
     private final Long originTransactionFee;
@@ -48,7 +51,7 @@ public class TransactionData {
     public TransactionData(String name, PSBT psbt, Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         this(name, psbt.getTransaction());
         this.psbt = psbt;
-        this.verifiedAntiExfilSignatures.addAll(verifiedAntiExfilSignatures);
+        addVerifiedAntiExfilSignatures(verifiedAntiExfilSignatures);
     }
 
     public TransactionData(String name, BlockTransaction blockTransaction) {
@@ -108,12 +111,49 @@ public class TransactionData {
     }
 
     public void addVerifiedAntiExfilSignatures(Collection<VerifiedAntiExfilSignature> signatures) {
+        if(!signatures.isEmpty()) {
+            protectedSigningContext = true;
+            verifiedProtectedContext = true;
+        }
         verifiedAntiExfilSignatures.addAll(signatures);
     }
 
     public void replaceVerifiedAntiExfilSignatures(Collection<VerifiedAntiExfilSignature> signatures) {
         verifiedAntiExfilSignatures.clear();
+        if(!signatures.isEmpty()) {
+            protectedSigningContext = true;
+            verifiedProtectedContext = true;
+        }
         verifiedAntiExfilSignatures.addAll(signatures);
+    }
+
+    public boolean hasProtectedSigningContext() {
+        if(psbt != null && psbt.hasSignatures() && AntiExfilPolicy.requiresProtectedSigning(getSigningWallet())) {
+            protectedSigningContext = true;
+        }
+        return protectedSigningContext;
+    }
+
+    public void combineVerifiedPsbt(PSBT returned, Set<VerifiedAntiExfilSignature> candidateProofs)
+            throws com.sparrowwallet.drongo.psbt.PSBTSignatureException {
+        psbt.verifyCombinedSignatures(returned);
+        // The caller has checked prospective provenance before entering this merge.
+        // Remember the context before observable completion events can be published.
+        if(!candidateProofs.isEmpty()) {
+            protectedSigningContext = true;
+            verifiedProtectedContext = true;
+        }
+        hasProtectedSigningContext();
+        psbt.combine(returned);
+        replaceVerifiedAntiExfilSignatures(AntiExfilPolicy.retainMatchingProofs(getSigningWallet(), psbt, candidateProofs));
+    }
+
+    public boolean hasVerifiedProtectedContext() {
+        return verifiedProtectedContext;
+    }
+
+    public boolean isProtectedFinalizationPending() {
+        return hasProtectedSigningContext() && psbt != null && !psbt.isFinalized();
     }
 
     public BlockTransaction getBlockTransaction() {
@@ -197,6 +237,9 @@ public class TransactionData {
     }
 
     public void setSigningWallet(Wallet wallet) {
+        if(psbt != null && psbt.hasSignatures() && AntiExfilPolicy.requiresProtectedSigning(wallet)) {
+            protectedSigningContext = true;
+        }
         this.signingWallet.set(wallet);
     }
 

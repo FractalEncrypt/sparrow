@@ -319,6 +319,13 @@
                         </graphic>
                     </Button>
                 </HBox>
+                <VBox fx:id="protectedCompletionBox" spacing="10" visible="false" managed="false">
+                    <Label text="Protected signatures verified. PSBT not finalized." wrapText="true" />
+                    <HBox spacing="20">
+                        <ToggleButton fx:id="protectedSavePsbtButton" text="Save Transaction" HBox.hgrow="ALWAYS" maxWidth="Infinity" onAction="#savePSBT" />
+                        <Button fx:id="finalizeProtectedButton" text="Finalize Transaction" defaultButton="false" HBox.hgrow="ALWAYS" maxWidth="Infinity" onAction="#finalizeProtectedTransaction" />
+                    </HBox>
+                </VBox>
                 <HBox fx:id="broadcastButtonBox" styleClass="signatures-buttons" spacing="20">
                     <Button fx:id="viewFinalButton" HBox.hgrow="ALWAYS" text="View Final Transaction" contentDisplay="TOP" wrapText="true" textAlignment="CENTER" onAction="#extractTransaction">
                         <graphic>

@@ -2270,9 +2270,7 @@ public class AppController implements Initializable {
                     PSBT combinedPsbt = currentPsbt.verifyCombinedSignatures(psbt);
                     //A combine can resolve a silent payment output script, which is only valid if the metadata provided with it proves the claimed address
                     verifySilentPaymentScripts(transactionTabData.getTransactionData().getSigningWallet(), combinedPsbt);
-                    currentPsbt.combine(psbt);
-                    transactionTabData.getTransactionData().replaceVerifiedAntiExfilSignatures(
-                            AntiExfilPolicy.retainMatchingProofs(signingWallet, currentPsbt, candidateProofs));
+                    transactionTabData.getTransactionData().combineVerifiedPsbt(psbt, candidateProofs);
                     setTabName(tab, name);
                     EventManager.get().post(new PSBTCombinedEvent(currentPsbt));
                 } catch(PSBTSignatureException e) {
