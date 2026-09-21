@@ -64,7 +64,13 @@ class KeystoreFxmlAntiExfilTest {
         specter.setWalletModel(WalletModel.SPECTER_DIY);
 
         assertTrue(KeystoreController.supportsRequiredAntiExfil(seedSigner));
-        assertFalse(KeystoreController.supportsRequiredAntiExfil(kern), "Kern remains OPTIONAL until M8");
+        assertTrue(KeystoreController.supportsRequiredAntiExfil(kern));
+        for(AntiExfilProfile profile : AntiExfilProfile.values()) {
+            kern.setAntiExfilProfile(profile);
+            assertEquals(profile == AntiExfilProfile.AEXT_V1,
+                    KeystoreController.supportsRequiredAntiExfil(kern),
+                    "Kern REQUIRED capability must remain bound to the reviewed profile");
+        }
         seedSigner.setAntiExfilProfile(AntiExfilProfile.IN_PSBT_V1);
         assertFalse(KeystoreController.supportsRequiredAntiExfil(seedSigner),
                 "a broad model identity must not authorize a different carriage");
