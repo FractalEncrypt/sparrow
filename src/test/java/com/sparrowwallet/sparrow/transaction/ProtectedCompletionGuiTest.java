@@ -393,7 +393,9 @@ class ProtectedCompletionGuiTest {
     }
 
     private void captureLayout(Fixture f, String name) throws Exception {
-        Path output = Path.of(System.getProperty("m8.layout.output")); Files.createDirectories(output);
+        String configuredOutput = System.getProperty("m8.layout.output");
+        Path output = configuredOutput == null || configuredOutput.isBlank() ? temp.resolve("layout") : Path.of(configuredOutput);
+        Files.createDirectories(output);
         JsonObject result = new JsonObject();
         result.addProperty("sceneWidth", f.stage.getScene().getWidth());
         result.addProperty("sceneHeight", f.stage.getScene().getHeight());
