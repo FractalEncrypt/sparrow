@@ -3,7 +3,7 @@ name: Gate 5 validation CI
 on:
   push:
     branches:
-      - codex/v12-gate5-trust-contracts-ci
+      - codex/sync-*-sparrow
 
 permissions:
   contents: read
