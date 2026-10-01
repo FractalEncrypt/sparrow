@@ -1257,14 +1257,14 @@ public class AppController implements Initializable {
                             log.error("Error Opening Wallet", exception);
                             showErrorDialog("Error Opening Wallet", exception.getMessage() == null || exception.getMessage().contains("Expected BEGIN_OBJECT") ? "Unsupported wallet file format." : exception.getMessage());
                         }
-                        password.clear();
                     }
+                    password.clear();
                 });
                 EventManager.get().post(new StorageEvent(storage.getWalletId(null), TimedEvent.Action.START, "Decrypting wallet..."));
                 loadWalletService.start();
             }
         } catch(Exception e) {
-            if(e instanceof IOException && e.getMessage().startsWith("The process cannot access the file because another process has locked")) {
+            if(e instanceof IOException && e.getMessage() != null && e.getMessage().startsWith("The process cannot access the file because another process has locked")) {
                 log.error("Error opening wallet", e);
                 showErrorDialog("Error Opening Wallet", "The wallet file is locked. Is another instance of " + SparrowWallet.APP_NAME + " already running?");
             } else if(!attemptImportWallet(file, null)) {
@@ -1298,7 +1298,7 @@ public class AppController implements Initializable {
     }
 
     public void importWallet(ActionEvent event) {
-        List<WalletForm> selectedWalletForms = getSelectedWalletForms();
+        List<WalletForm> selectedWalletForms = getSelectedWalletForms().stream().filter(walletForm -> !walletForm.isLocked()).collect(Collectors.toList());
         WalletImportDialog dlg = new WalletImportDialog(selectedWalletForms);
         dlg.initOwner(rootStack.getScene().getWindow());
         Optional<List<Wallet>> optionalWallets = dlg.showAndWait();
@@ -1573,7 +1573,7 @@ public class AppController implements Initializable {
     public void sweepPrivateKey(ActionEvent event) {
         Wallet wallet = null;
         WalletForm selectedWalletForm = getSelectedWalletForm();
-        if(selectedWalletForm != null && selectedWalletForm.getWallet().isValid()) {
+        if(selectedWalletForm != null && selectedWalletForm.getWallet().isValid() && !selectedWalletForm.isLocked()) {
             wallet = selectedWalletForm.getWallet();
         }
 
@@ -3353,12 +3353,6 @@ public class AppController implements Initializable {
     }
 
     @Subscribe
-    public void torExternalStatus(TorExternalStatusEvent event) {
-        serverToggle.setDisable(false);
-        statusUpdated(new StatusEvent(event.getStatus()));
-    }
-
-    @Subscribe
     public void newBlock(NewBlockEvent event) {
         setServerToggleTooltip(event.getHeight());
     }
@@ -3522,13 +3516,6 @@ public class AppController implements Initializable {
     }
 
     @Subscribe
-    public void requestQRScan(RequestQRScanEvent event) {
-        if(tabs.getScene().getWindow().equals(event.getWindow())) {
-            openTransactionFromQR(null);
-        }
-    }
-
-    @Subscribe
     public void requestVerifyDownloadOpen(RequestVerifyDownloadEvent event) {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
             verifyDownload(new ActionEvent(event.getFile(), rootStack));
@@ -3563,6 +3550,7 @@ public class AppController implements Initializable {
         if(selectedWalletForm != null && selectedWalletForm.getMasterWallet().equals(event.getWallet())) {
             lockWallet.setDisable(true);
             exportWallet.setDisable(true);
+            showPayNym.setDisable(true);
         }
 
         lockAllWallets.setDisable(allWalletsLocked(event.getWallet()));
@@ -3574,6 +3562,7 @@ public class AppController implements Initializable {
         if(selectedWalletForm != null && selectedWalletForm.getMasterWallet().equals(event.getWallet())) {
             lockWallet.setDisable(false);
             exportWallet.setDisable(!event.getWallet().isValid());
+            showPayNym.setDisable(exportWallet.isDisable() || !selectedWalletForm.getWallet().hasPaymentCode());
             lockAllWallets.setDisable(false);
         }
     }
