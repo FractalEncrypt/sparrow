@@ -3405,6 +3405,23 @@ public class AppController implements Initializable {
     @Subscribe
     public void viewPSBT(ViewPSBTEvent event) {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
+            for(Tab tab : tabs.getTabs()) {
+                if(tab.getUserData() instanceof TransactionTabData transactionTabData) {
+                    PSBT currentPsbt = transactionTabData.getPsbt();
+                    if(currentPsbt != null && !currentPsbt.isFinalized() && currentPsbt.matches(event.getPsbt())) {
+                        if(event.getContextPsbt() != null && !currentPsbt.matches(event.getContextPsbt())) {
+                            AppServices.showErrorDialog("Mismatched Transaction",
+                                    "The returned PSBT does not match the protected signing context.");
+                            return;
+                        }
+                        // Validate the prospective merge using only this tab's retained proofs and the incoming proofs.
+                        // The early incoming-only gate cannot account for signatures from earlier ceremonies.
+                        handleTransactionMerge(transactionTabData, event.getPsbt(), event.getLabel(), tab,
+                                event.getVerifiedAntiExfilSignatures());
+                        return;
+                    }
+                }
+            }
             if(!violatesAntiExfilPolicy(event.getContextPsbt(), null, event.getPsbt(), event.getVerifiedAntiExfilSignatures())
                     && verifyTransactionContext(event.getContextPsbt(), null, event.getPsbt(), "scanned")) {
                 addTransactionTab(event.getLabel(), event.getFile(), event.getPsbt(), event.getVerifiedAntiExfilSignatures());
