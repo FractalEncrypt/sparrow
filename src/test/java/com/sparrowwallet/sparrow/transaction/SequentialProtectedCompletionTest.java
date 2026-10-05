@@ -277,6 +277,46 @@ public class SequentialProtectedCompletionTest {
         }
     }
 
+    @Test void ordinaryEmptyProofScanCannotAuthorizeAnUnprovenRequiredSignature() throws Exception {
+        Fixture f = fixture(2, "RR");
+        Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
+        PSBT ordinary = copy(a.signed);
+        ECKey b = childKey(f.privateSigners.get(1));
+        ordinary.getPsbtInputs().getFirst().getPartialSignatures().put(ECKey.fromPublicOnly(b.getPubKey()),
+                b.sign(ordinary.getPsbtInputs().getFirst().getSigningHash(), SigHash.ALL, TransactionSignature.Type.ECDSA));
+        ordinary.verifySignatures();
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, ordinary, a.completion.getVerifiedSignatures()));
+        for(boolean crossTab : List.of(false, true)) {
+            fx(() -> {
+                try(Harness h = new Harness(f.wallet, copy(f.psbt))) {
+                    h.post(a, f.psbt);
+                    PSBT context = copy(a.signed);
+                    TransactionData origin = null;
+                    if(crossTab) {
+                        context.getTransaction().setLocktime(12345);
+                        origin = new TransactionData("scan origin", copy(context));
+                        origin.setSigningWallet(f.wallet);
+                        Tab tab = new Tab();
+                        tab.setGraphic(new Label("scan origin"));
+                        tab.setUserData(new TransactionTabData(TabData.TabType.TRANSACTION, null, origin));
+                        h.tabs.getTabs().add(tab);
+                        h.tabs.getSelectionModel().select(tab);
+                    }
+                    byte[] originBefore = origin == null ? null : origin.getPsbt().serialize();
+                    h.assertRejectedUnchanged(ordinary, context, Set.of());
+                    assertTrue(h.alerts.toString().contains("REQUIRED_PROOF_MISSING"), h.alerts.toString());
+                    assertFalse(h.alerts.toString().contains("Mismatched Transaction"), h.alerts.toString());
+                    if(origin != null) {
+                        assertArrayEquals(originBefore, origin.getPsbt().serialize());
+                        assertTrue(origin.getVerifiedAntiExfilSignatures().isEmpty());
+                    }
+                }
+                return null;
+            });
+        }
+    }
+
     @Test void finalizedInvalidOptionalSignatureIsRejectedBeforeMutation() throws Exception {
         Fixture f = fixture(2, "OO");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));

@@ -3,13 +3,16 @@ package com.sparrowwallet.sparrow.net;
 import com.google.common.eventbus.EventBus;
 import com.google.common.eventbus.Subscribe;
 import com.sparrowwallet.sparrow.EventManager;
+import com.sparrowwallet.sparrow.SparrowWallet;
 import com.sparrowwallet.sparrow.event.WalletNodeHistoryChangedEvent;
 import javafx.application.Platform;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SubscriptionServiceTest {
+    private static String previousHome;
     private Field eventBusField;
     private Object previousEventBus;
     private final Recorder recorder = new Recorder();
@@ -33,12 +37,22 @@ public class SubscriptionServiceTest {
 
     @BeforeAll
     public static void setUpAll() throws Exception {
+        previousHome = System.getProperty(SparrowWallet.APP_HOME_PROPERTY);
+        System.setProperty(SparrowWallet.APP_HOME_PROPERTY,
+                Files.createTempDirectory("sparrow-subscription-home-").toString());
         CountDownLatch started = new CountDownLatch(1);
         try { Platform.startup(started::countDown); }
         catch(IllegalStateException alreadyRunning) { started.countDown(); }
         assertTrue(started.await(15, TimeUnit.SECONDS));
         Platform.setImplicitExit(false);
-        // Use the test task's isolated sparrow.home; do not put an open log in a JUnit-owned temporary directory.
+        // A sibling can clear the task property. Isolate this class even in that order.
+        // The home is not JUnit-owned: logging can hold files open past class teardown on Windows.
+    }
+
+    @AfterAll
+    public static void restoreHome() {
+        if(previousHome == null) System.clearProperty(SparrowWallet.APP_HOME_PROPERTY);
+        else System.setProperty(SparrowWallet.APP_HOME_PROPERTY, previousHome);
     }
 
     @BeforeEach
