@@ -3405,22 +3405,38 @@ public class AppController implements Initializable {
     @Subscribe
     public void viewPSBT(ViewPSBTEvent event) {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
+            if(event.getPsbt() == null) {
+                AppServices.showErrorDialog("Invalid PSBT", "The return does not contain a PSBT.");
+                return;
+            }
+            List<Tab> matchingTabs = new ArrayList<>();
             for(Tab tab : tabs.getTabs()) {
                 if(tab.getUserData() instanceof TransactionTabData transactionTabData) {
                     PSBT currentPsbt = transactionTabData.getPsbt();
                     if(currentPsbt != null && !currentPsbt.isFinalized() && currentPsbt.matches(event.getPsbt())) {
-                        if(event.getContextPsbt() != null && !currentPsbt.matches(event.getContextPsbt())) {
-                            AppServices.showErrorDialog("Mismatched Transaction",
-                                    "The returned PSBT does not match the protected signing context.");
-                            return;
-                        }
-                        // Validate the prospective merge using only this tab's retained proofs and the incoming proofs.
-                        // The early incoming-only gate cannot account for signatures from earlier ceremonies.
-                        handleTransactionMerge(transactionTabData, event.getPsbt(), event.getLabel(), tab,
-                                event.getVerifiedAntiExfilSignatures());
-                        return;
+                        matchingTabs.add(tab);
                     }
                 }
+            }
+            if(matchingTabs.size() > 1) {
+                AppServices.showErrorDialog("Multiple Matching Transactions",
+                        "More than one open transaction tab matches this PSBT. Close duplicate transaction tabs before importing or scanning the return.");
+                return;
+            }
+            if(!matchingTabs.isEmpty()) {
+                Tab tab = matchingTabs.getFirst();
+                TransactionTabData transactionTabData = (TransactionTabData)tab.getUserData();
+                // Proof-bearing returns belong to a ceremony; ordinary scans can target another open transaction.
+                if(!event.getVerifiedAntiExfilSignatures().isEmpty() && event.getContextPsbt() != null
+                        && !transactionTabData.getPsbt().matches(event.getContextPsbt())) {
+                    AppServices.showErrorDialog("Mismatched Transaction",
+                            "The returned PSBT does not match the protected signing context.");
+                    return;
+                }
+                // Only the unique destination tab's wallet and retained proofs govern the prospective merge.
+                handleTransactionMerge(transactionTabData, event.getPsbt(), event.getLabel(), tab,
+                        event.getVerifiedAntiExfilSignatures());
+                return;
             }
             if(!violatesAntiExfilPolicy(event.getContextPsbt(), null, event.getPsbt(), event.getVerifiedAntiExfilSignatures())
                     && verifyTransactionContext(event.getContextPsbt(), null, event.getPsbt(), "scanned")) {

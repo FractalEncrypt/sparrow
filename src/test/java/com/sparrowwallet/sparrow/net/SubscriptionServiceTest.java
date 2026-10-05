@@ -1,14 +1,18 @@
 package com.sparrowwallet.sparrow.net;
 
-import com.sparrowwallet.sparrow.SparrowWallet;
-import org.junit.jupiter.api.AfterAll;
+import com.google.common.eventbus.EventBus;
+import com.google.common.eventbus.Subscribe;
+import com.sparrowwallet.sparrow.EventManager;
+import com.sparrowwallet.sparrow.event.WalletNodeHistoryChangedEvent;
+import javafx.application.Platform;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import java.nio.file.Path;
+import java.lang.reflect.Field;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -16,8 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SubscriptionServiceTest {
-    @TempDir
-    private static Path tempHome;
+    private Field eventBusField;
+    private Object previousEventBus;
+    private final Recorder recorder = new Recorder();
 
     private static final String SCRIPT_HASH = "0000000000000000000000000000000000000000000000000000000000000001";
 
@@ -27,23 +32,33 @@ public class SubscriptionServiceTest {
     private final SubscriptionService subscriptionService = new SubscriptionService();
 
     @BeforeAll
-    public static void setUpAll() {
-        System.setProperty(SparrowWallet.APP_HOME_PROPERTY, tempHome.toString());
-    }
-
-    @AfterAll
-    public static void tearDownAll() {
-        System.clearProperty(SparrowWallet.APP_HOME_PROPERTY);
+    public static void setUpAll() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        try { Platform.startup(started::countDown); }
+        catch(IllegalStateException alreadyRunning) { started.countDown(); }
+        assertTrue(started.await(15, TimeUnit.SECONDS));
+        Platform.setImplicitExit(false);
+        // Use the test task's isolated sparrow.home; do not put an open log in a JUnit-owned temporary directory.
     }
 
     @BeforeEach
-    public void setUp() {
+    public void setUp() throws Exception {
+        eventBusField = EventManager.class.getDeclaredField("SINGLETON");
+        eventBusField.setAccessible(true);
+        previousEventBus = eventBusField.get(null);
+        EventBus bus = new EventBus();
+        bus.register(recorder);
+        eventBusField.set(null, bus);
         ElectrumServer.getSubscribedScriptHashes().clear();
     }
 
     @AfterEach
-    public void tearDown() {
-        ElectrumServer.getSubscribedScriptHashes().clear();
+    public void tearDown() throws Exception {
+        try { drainFx(); }
+        finally {
+            ElectrumServer.getSubscribedScriptHashes().clear();
+            eventBusField.set(null, previousEventBus);
+        }
     }
 
     @Test
@@ -95,16 +110,37 @@ public class SubscriptionServiceTest {
     }
 
     /**
-     * Delivers a subscription notification and returns whether it was passed on as a history change. The event is posted through Platform.runLater,
-     * and no test here starts the JavaFX toolkit, so reaching that call is observable as its refusal - a filtered notification returns before it.
+     * Observe real queued notifications, regardless of whether another test already started JavaFX.
      */
     private boolean notifyStatus(String scriptHash, String status) {
-        try {
-            subscriptionService.scriptHashStatusUpdated(scriptHash, status);
-            return false;
-        } catch(IllegalStateException e) {
-            assertEquals("Toolkit not initialized", e.getMessage());
-            return true;
+        int before = recorder.deliveries.get();
+        subscriptionService.scriptHashStatusUpdated(scriptHash, status);
+        drainFx();
+        int delivered = recorder.deliveries.get() - before;
+        assertTrue(delivered == 0 || delivered == 1);
+        if(delivered == 1) {
+            assertEquals(scriptHash, recorder.last.getScriptHash());
+            assertEquals(status, recorder.last.getStatus());
+        }
+        return delivered == 1;
+    }
+
+    private static void drainFx() {
+        CountDownLatch drained = new CountDownLatch(1);
+        Platform.runLater(drained::countDown);
+        try { assertTrue(drained.await(10, TimeUnit.SECONDS), "JavaFX notifications did not drain"); }
+        catch(InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(e);
+        }
+    }
+
+    public static final class Recorder {
+        final AtomicInteger deliveries = new AtomicInteger();
+        volatile WalletNodeHistoryChangedEvent last;
+        @Subscribe public void changed(WalletNodeHistoryChangedEvent event) {
+            last = event;
+            deliveries.incrementAndGet();
         }
     }
 }

@@ -189,7 +189,19 @@ public class SequentialProtectedCompletionTest {
         rejectWithoutBorrowingProofs(true);
     }
 
+    @Test void reversedMatchingTabsCannotChangeTheRejection() throws Exception {
+        rejectWithoutBorrowingProofs(true, true, false);
+    }
+
+    @Test void duplicateTabsWithDifferentPoliciesAreRejectedInEitherOrder() throws Exception {
+        for(boolean reversed : List.of(false, true)) rejectWithoutBorrowingProofs(true, reversed, true);
+    }
+
     private void rejectWithoutBorrowingProofs(boolean sameTransaction) throws Exception {
+        rejectWithoutBorrowingProofs(sameTransaction, false, false);
+    }
+
+    private void rejectWithoutBorrowingProofs(boolean sameTransaction, boolean reversed, boolean optionalOther) throws Exception {
         Fixture f = fixture(2, "RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
         Run b = complete(a.signed, f.privateSigners.get(1), f.wallet.getKeystores().get(1));
@@ -200,15 +212,85 @@ public class SequentialProtectedCompletionTest {
                 PSBT other = copy(a.signed);
                 if(!sameTransaction) other.getTransaction().setLocktime(12345);
                 TransactionData otherData = new TransactionData("other", other, a.completion.getVerifiedSignatures());
-                otherData.setSigningWallet(f.wallet);
+                Wallet otherWallet = f.wallet.copy();
+                if(optionalOther) otherWallet.getKeystores().forEach(keystore ->
+                        keystore.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL));
+                otherData.setSigningWallet(otherWallet);
                 Tab otherTab = new Tab();
                 otherTab.setGraphic(new Label("other"));
                 otherTab.setUserData(new TransactionTabData(TabData.TabType.TRANSACTION, null, otherData));
-                h.tabs.getTabs().add(otherTab);
+                h.tabs.getTabs().add(reversed ? 0 : 1, otherTab);
                 byte[] otherBefore = other.serialize();
                 h.assertRejectedUnchanged(b.signed, a.signed, b.completion.getVerifiedSignatures());
                 assertArrayEquals(otherBefore, other.serialize());
                 assertEquals(a.completion.getVerifiedSignatures(), otherData.getVerifiedAntiExfilSignatures());
+                if(sameTransaction) assertTrue(h.alerts.toString().contains("Multiple Matching Transactions"), h.alerts.toString());
+            }
+            return null;
+        });
+    }
+
+    @Test void nullPsbtEventIsReportedWithoutMutationOrSubscriberException() throws Exception {
+        Fixture f = fixture(2, "RR");
+        fx(() -> {
+            try(Harness h = new Harness(f.wallet, copy(f.psbt))) {
+                h.assertRejectedUnchanged(null, f.psbt, Set.of());
+                assertTrue(h.alerts.toString().contains("Invalid PSBT"), h.alerts.toString());
+            }
+            return null;
+        });
+    }
+
+    @Test void ordinaryCrossTabScanUsesDestinationWalletAndRetainedProofs() throws Exception {
+        Fixture f = fixture(2, "RO");
+        Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
+        PSBT ordinary = copy(a.signed);
+        ECKey b = childKey(f.privateSigners.get(1));
+        ordinary.getPsbtInputs().getFirst().getPartialSignatures().put(ECKey.fromPublicOnly(b.getPubKey()),
+                b.sign(ordinary.getPsbtInputs().getFirst().getSigningHash(), SigHash.ALL, TransactionSignature.Type.ECDSA));
+        PSBT scanOrigin = copy(f.psbt);
+        scanOrigin.getTransaction().setLocktime(12345);
+        for(boolean stricterWalletFirst : List.of(false, true)) {
+            fx(() -> {
+                try(Harness h = new Harness(f.wallet, copy(f.psbt))) {
+                    h.post(a, f.psbt);
+                    TransactionData originData = new TransactionData("scan origin", copy(scanOrigin));
+                    originData.setSigningWallet(f.wallet);
+                    Tab originTab = new Tab();
+                    originTab.setGraphic(new Label("scan origin"));
+                    originTab.setUserData(new TransactionTabData(TabData.TabType.TRANSACTION, null, originData));
+                    h.tabs.getTabs().add(originTab);
+                    h.tabs.getSelectionModel().select(originTab);
+                    byte[] originBefore = originData.getPsbt().serialize();
+                    Wallet stricterWallet = f.wallet.copy();
+                    stricterWallet.getKeystores().forEach(keystore -> keystore.setAntiExfilPolicy(AntiExfilKeystorePolicy.REQUIRED));
+                    h.setOpenWallets(stricterWalletFirst ? List.of(stricterWallet, f.wallet) : List.of(f.wallet, stricterWallet));
+                    h.post(ordinary, scanOrigin, Set.of());
+                    assertEquals(2, h.observer.merges);
+                    assertEquals(a.completion.getVerifiedSignatures(), h.data.getVerifiedAntiExfilSignatures());
+                    assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED, AntiExfilPolicy.evaluatePsbtEgress(h.data));
+                    assertArrayEquals(originBefore, originData.getPsbt().serialize());
+                    assertTrue(h.alerts.isEmpty(), h.alerts.toString());
+                }
+                return null;
+            });
+        }
+    }
+
+    @Test void finalizedInvalidOptionalSignatureIsRejectedBeforeMutation() throws Exception {
+        Fixture f = fixture(2, "OO");
+        Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
+        PSBT finalized = copy(a.signed);
+        ECKey b = childKey(f.privateSigners.get(1));
+        finalized.getPsbtInputs().getFirst().getPartialSignatures().put(ECKey.fromPublicOnly(b.getPubKey()),
+                b.sign(Sha256Hash.ZERO_HASH, SigHash.ALL, TransactionSignature.Type.ECDSA));
+        f.wallet.finalise(finalized);
+        fx(() -> {
+            try(Harness h = new Harness(f.wallet, copy(f.psbt))) {
+                h.post(a, f.psbt);
+                h.assertRejectedUnchanged(finalized, a.signed, Set.of());
+                assertFalse(h.data.getPsbt().isFinalized());
+                assertTrue(h.alerts.toString().contains("Invalid PSBT"), h.alerts.toString());
             }
             return null;
         });
@@ -581,6 +663,16 @@ public class SequentialProtectedCompletionTest {
             EventManager.get().register(observer);
         }
         void post(Run run, PSBT context) { post(run.signed, context, run.completion.getVerifiedSignatures()); }
+        void setOpenWallets(List<Wallet> wallets) throws Exception {
+            Field windows = AppServices.class.getDeclaredField("walletWindows");
+            windows.setAccessible(true);
+            @SuppressWarnings("unchecked") Map<Window, List<WalletTabData>> map =
+                    (Map<Window, List<WalletTabData>>)windows.get(AppServices.get());
+            map.put(stage, wallets.stream().map(wallet -> new WalletTabData(TabData.TabType.WALLET, null) {
+                @Override public Wallet getWallet() { return wallet; }
+                @Override public Storage getStorage() { return null; }
+            }).map(walletTab -> (WalletTabData)walletTab).toList());
+        }
         void post(PSBT signed, PSBT context, Set<VerifiedAntiExfilSignature> proofs) {
             EventManager.get().post(new ViewPSBTEvent(stage, null, null, signed, context,
                     TransactionView.HEADERS, null, proofs));
