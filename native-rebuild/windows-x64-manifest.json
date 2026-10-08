@@ -1,0 +1,32 @@
+{
+  "zbar.dll": {
+    "bytes": 343040,
+    "sha256": "7d2235bda7e848205d067e465330ee22851ecba5597d280e7db38c25ca6ba44c",
+    "resource": "src/main/resources/native/windows/x64/zbar.dll",
+    "build_output": "native-output/zbar.dll"
+  },
+  "iconv-2.dll": {
+    "bytes": 1175552,
+    "sha256": "1874cf78ad707502dd3da7e9376604e100754bc924d68cd029dae4376a2cb3ed",
+    "resource": "src/main/resources/native/windows/x64/iconv-2.dll",
+    "build_output": "native-output/iconv-2.dll"
+  },
+  "libusb4java.dll": {
+    "bytes": 267776,
+    "sha256": "636805e5b2eb9b4accc951e9f4ed289ee9ca3c6e533c8cc9507c7c46721a7ef3",
+    "resource": "src/main/resources/native/windows/x64/libusb4java.dll",
+    "build_output": "native-output/libusb4java.dll"
+  },
+  "libsecp256k1-0.dll": {
+    "bytes": 215040,
+    "sha256": "ec5549ee84a0a78c6727ea2ee3e9b48d91f8febad1c009cb2c169d8faaeab7e9",
+    "resource": "drongo/src/main/resources/native/windows/x64/libsecp256k1-0.dll",
+    "build_output": "native-output/libsecp256k1-0.dll"
+  },
+  "bwt_jni.dll": {
+    "bytes": 5516288,
+    "sha256": "6d7473e2fd399578402b5897061f20795c338319a5d956a19b07b6bad0fc8027",
+    "resource": "src/main/resources/native/windows/x64/bwt_jni.dll",
+    "build_output": "native-sources/bwt-jni-v0.2.4/target/x86_64-pc-windows-msvc/release/bwt_jni.dll"
+  }
+}

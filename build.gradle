@@ -478,8 +478,21 @@ tasks.register('extractNativeLibraries') {
     dependsOn 'jlink'
     inputs.files(configurations.runtimeClasspath)
     def drongoNativeDir = "${project(':drongo').projectDir}/src/main/resources/native/${osName}/${osArch}"
+    def projectNativeDir = file("src/main/resources/native/${osName}/${osArch}")
+    inputs.dir(projectNativeDir)
+    inputs.dir(drongoNativeDir)
     doLast {
         def imageLib = file("$buildDir/image/lib")
+        if(os.windows) {
+            def manifest = new groovy.json.JsonSlurper().parse(file('native-rebuild/windows-x64-manifest.json'))
+            manifest.each { name, expected ->
+                def nativeFile = file(expected.resource)
+                def actual = java.security.MessageDigest.getInstance('SHA-256').digest(nativeFile.bytes).encodeHex().toString()
+                if(actual != expected.sha256 || nativeFile.length() != expected.bytes) {
+                    throw new GradleException("Source-built native identity mismatch: ${name}")
+                }
+            }
+        }
 
         // Project-owned natives
         copy {
@@ -514,6 +527,8 @@ tasks.register('extractNativeLibraries') {
                     from(zipTree(jar)) { include includePattern }
                     into imageLib
                     eachFile { it.path = it.name; it.permissions { unix('rw-r--r--') } }
+                    // Pinned source-built replacements must survive a clean rebuild.
+                    eachFile { if(new File(projectNativeDir, it.name).isFile()) { it.exclude() } }
                     includeEmptyDirs = false
                 }
             }
