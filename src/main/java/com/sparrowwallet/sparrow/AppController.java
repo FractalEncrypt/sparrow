@@ -1097,6 +1097,12 @@ public class AppController implements Initializable {
             jCommander.parse(argv);
         });
 
+        // Native jpackage launchers can expose no ProcessHandle arguments on Windows.
+        // Restart from the effective home/network so wallet state and anti-exfil journals stay together.
+        if(System.getProperty(SparrowWallet.APP_HOME_PROPERTY) != null) {
+            args.dir = Storage.getConfigHome().getAbsolutePath();
+        }
+        args.network = Network.get();
         return args;
     }
 
