@@ -28,9 +28,9 @@ public final class AntiExfilSigningFlow {
         if(phase == AntiExfilCoordinator.Phase.COMMITMENTS_CREATED) {
             AntiExfilTransportPackage commit = outgoing(session.hostCommitMessage(), frozenPsbt);
             if(!exchange.display(commit)) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
-            Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_OPENINGS, network);
-            if(scanned.isEmpty()) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
             try {
+                Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_OPENINGS, network);
+                if(scanned.isEmpty()) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
                 AntiExfilTransportPackage openings = exactIncoming(scanned.get(), AntiExfilStage.SIGNER_OPENINGS, network);
                 revealBytes = session.acceptOpenings(AntiExfilCodec.encode(openings.getMessage()));
             } catch(AntiExfilException e) {
@@ -48,13 +48,13 @@ public final class AntiExfilSigningFlow {
                 session.recordPostRevealAbort(AntiExfilCoordinator.AbortReason.USER_ABANDONED);
                 return new Result(Outcome.ABORTED_AFTER_REVEAL, null);
             }
-            Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_SIGNATURES, network);
-            if(scanned.isEmpty()) {
-                if(exchange.onPostRevealInterruption() == PostRevealAction.RETRY_EXACT) continue;
-                session.recordPostRevealAbort(AntiExfilCoordinator.AbortReason.TRANSPORT_FAILED);
-                return new Result(Outcome.ABORTED_AFTER_REVEAL, null);
-            }
             try {
+                Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_SIGNATURES, network);
+                if(scanned.isEmpty()) {
+                    if(exchange.onPostRevealInterruption() == PostRevealAction.RETRY_EXACT) continue;
+                    session.recordPostRevealAbort(AntiExfilCoordinator.AbortReason.TRANSPORT_FAILED);
+                    return new Result(Outcome.ABORTED_AFTER_REVEAL, null);
+                }
                 AntiExfilTransportPackage signatures = exactIncoming(scanned.get(), AntiExfilStage.SIGNER_SIGNATURES, network);
                 AntiExfilCoordinator.Completion completion = session.complete(AntiExfilCodec.encode(signatures.getMessage()));
                 return new Result(Outcome.COMPLETE, completion);

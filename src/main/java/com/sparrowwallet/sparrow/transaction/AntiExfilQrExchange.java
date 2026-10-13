@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.transaction;
 
 import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.antiexfil.AntiExfilException;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilNetwork;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilStage;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import java.util.function.Consumer;
 
 public final class AntiExfilQrExchange implements AntiExfilSigningFlow.Exchange {
     private static final Logger log = LoggerFactory.getLogger(AntiExfilQrExchange.class);
@@ -48,22 +50,26 @@ public final class AntiExfilQrExchange implements AntiExfilSigningFlow.Exchange 
         dialog.setTitle("Anti-exfil signing");
         dialog.setHeaderText(scanHeader(expectedStage, signerName));
         dialog.initOwner(owner);
-        Optional<QRScanDialog.Result> result = dialog.showAndWait();
+        return decodeScanResult(dialog.showAndWait(), expectedStage, expectedNetwork,
+                message -> AppServices.showErrorDialog("Invalid anti-exfil QR", message));
+    }
+
+    static Optional<AntiExfilTransportPackage> decodeScanResult(Optional<QRScanDialog.Result> result,
+                                                                AntiExfilStage expectedStage,
+                                                                AntiExfilNetwork expectedNetwork,
+                                                                Consumer<String> transportError) {
         if(result.isEmpty()) return Optional.empty();
+        if(result.get().exception instanceof AntiExfilException exception) throw exception;
         if(result.get().exception != null || result.get().getUr() == null) {
-            AppServices.showErrorDialog("Invalid anti-exfil QR",
-                    result.get().exception == null ? "Scanner returned no anti-exfil UR" : result.get().exception.getMessage());
+            transportError.accept(result.get().exception == null
+                    ? "Scanner returned no anti-exfil UR" : result.get().exception.getMessage());
             return Optional.empty();
         }
-        try {
-            AntiExfilTransportPackage transportPackage = AntiExfilQrCodec.fromUr(
-                    result.get().getUr(), expectedStage, expectedNetwork);
-            recordEvidence("incoming", transportPackage);
-            return Optional.of(transportPackage);
-        } catch(IllegalArgumentException exception) {
-            AppServices.showErrorDialog("Invalid anti-exfil QR", exception.getMessage());
-            return Optional.empty();
-        }
+        // Protocol rejections must reach the signing flow's durable rejection handler.
+        AntiExfilTransportPackage transportPackage = AntiExfilQrCodec.fromUr(
+                result.get().getUr(), expectedStage, expectedNetwork);
+        recordEvidence("incoming", transportPackage);
+        return Optional.of(transportPackage);
     }
 
     static String displayHeader(AntiExfilStage stage, String signerName) {
