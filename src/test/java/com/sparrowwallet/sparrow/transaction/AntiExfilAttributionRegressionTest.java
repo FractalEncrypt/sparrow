@@ -169,6 +169,29 @@ class AntiExfilAttributionRegressionTest {
         fx(() -> { assertSame(optional, ((ComboBox<?>)f.node("signingWallet")).getValue()); return null; });
     }
 
+    @Test void replacementSettingsEventUpdatesTheBoundAuthorityByStorageIdentity() throws Exception {
+        Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
+        PSBT unsigned = new PSBT(Utils.hexToBytes(vector.get("original_psbt_hex").getAsString()), false);
+        Fixture f = freshImport(unsigned, required);
+        Storage storage = new Storage(new java.io.File(temp.toFile(), "replacement-wallet.mv.db"));
+        Wallet replacement = required.copy();
+        fx(() -> {
+            f.data.getAvailableWallets().put(required, storage);
+            EventManager.get().post(new com.sparrowwallet.sparrow.event.WalletAddressesChangedEvent(
+                    replacement, required.copy(), storage.getWalletId(required)));
+            assertSame(replacement, f.data.getSigningWallet());
+            assertTrue(AntiExfilPolicy.requiresProtectedSigning(f.data.getSigningWallet()));
+            Wallet old = replacement.copy();
+            replacement.getKeystores().getFirst().setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
+            EventManager.get().post(new com.sparrowwallet.sparrow.event.KeystoreAntiExfilPoliciesChangedEvent(
+                    replacement, old, storage.getWalletId(replacement), replacement.getKeystores()));
+            assertSame(replacement, f.data.getSigningWallet());
+            assertFalse(AntiExfilPolicy.requiresProtectedSigning(f.data.getSigningWallet()));
+            assertTrue(f.node("antiExfilButton").isVisible()); // Optional compatible wallets still offer protected signing.
+            return null;
+        });
+    }
+
     @Test void validProofWalletBindingSurvivesOptionalDuplicateRefresh() throws Exception {
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);

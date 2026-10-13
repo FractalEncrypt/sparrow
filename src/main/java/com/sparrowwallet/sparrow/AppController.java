@@ -31,6 +31,7 @@ import com.sparrowwallet.sparrow.transaction.TransactionController;
 import com.sparrowwallet.sparrow.transaction.TransactionData;
 import com.sparrowwallet.sparrow.transaction.TransactionView;
 import com.sparrowwallet.sparrow.transaction.AntiExfilPolicy;
+import com.sparrowwallet.sparrow.transaction.HeadersController;
 import com.sparrowwallet.sparrow.wallet.Entry;
 import com.sparrowwallet.sparrow.wallet.WalletController;
 import com.sparrowwallet.sparrow.wallet.WalletForm;
@@ -752,6 +753,7 @@ public class AppController implements Initializable {
         TabData tabData = (TabData)selectedTab.getUserData();
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData)tabData;
+            if(!requirePermittedTransactionEgress(transactionTabData, "save this transaction")) return;
             Transaction transaction = transactionTabData.getTransaction();
 
             Stage window = new Stage();
@@ -789,6 +791,7 @@ public class AppController implements Initializable {
         TabData tabData = (TabData)selectedTab.getUserData();
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData) tabData;
+            if(!requirePermittedTransactionEgress(transactionTabData, "display this transaction as QR")) return;
             Transaction transaction = transactionTabData.getTransaction();
 
             try {
@@ -915,6 +918,18 @@ public class AppController implements Initializable {
             qrDisplayDialog.initOwner(rootStack.getScene().getWindow());
             qrDisplayDialog.show();
         }
+    }
+
+    private boolean requirePermittedTransactionEgress(TransactionTabData transactionTabData, String action) {
+        TransactionData transactionData = transactionTabData.getTransactionData();
+        //Transactions fetched from the server (wallet history, already broadcast) are public and carry no quarantine
+        if(transactionData.getPsbt() == null && transactionData.getBlockTransaction() != null) return true;
+        AntiExfilPolicy.ProvenanceStatus status = HeadersController.evaluateTransactionProvenance(transactionData);
+        if(status == AntiExfilPolicy.ProvenanceStatus.PERMITTED) return true;
+        AppServices.showErrorDialog("Transaction export blocked",
+                "Sparrow cannot " + action + " because protected-signing provenance could not be verified ("
+                        + status + ").");
+        return false;
     }
 
     private boolean requirePermittedPsbtEgress(TransactionTabData transactionTabData, String action) {
@@ -2133,6 +2148,9 @@ public class AppController implements Initializable {
             try {
                 //Any PSBTs that have reached this point could not be combined with an existing PSBT. Verify signatures before continuing
                 psbt.verifySignatures();
+                // Upstream partial-signature verification does not check final fields. Missing UTXOs
+                // remain inspectable, with handler-time policy gates requiring validation context.
+                psbt.verifyKnownFinalizedSignatures();
             } catch(PSBTSignatureException e) {
                 AppServices.showErrorDialog("Invalid PSBT", e.getMessage());
                 return;

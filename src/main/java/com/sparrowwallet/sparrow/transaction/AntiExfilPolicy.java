@@ -43,6 +43,8 @@ public final class AntiExfilPolicy {
             return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
         }
         PSBT psbt = transactionData.getPsbt();
+        ProvenanceStatus finalizedStatus = validateFinalizedSignatures(psbt);
+        if(finalizedStatus != ProvenanceStatus.PERMITTED) return finalizedStatus;
         Wallet wallet = transactionData.getSigningWallet();
         if(wallet == null) {
             return psbt.hasSignatures() ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
@@ -55,6 +57,15 @@ public final class AntiExfilPolicy {
             return ProvenanceStatus.PERMITTED;
         }
         return evaluateSignatureProvenance(wallet, psbt, transactionData.getVerifiedAntiExfilSignatures());
+    }
+
+    private static ProvenanceStatus validateFinalizedSignatures(PSBT psbt) {
+        try {
+            return psbt.verifyKnownFinalizedSignatures()
+                    ? ProvenanceStatus.PERMITTED : ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+        } catch(Exception exception) {
+            return ProvenanceStatus.INVALID_PROVENANCE;
+        }
     }
 
     public static boolean hasRequiredSignature(Wallet wallet, PSBT psbt) {
@@ -72,6 +83,8 @@ public final class AntiExfilPolicy {
     public static ProvenanceStatus evaluateSignatureProvenance(Wallet wallet, PSBT psbt,
                                                                 Set<VerifiedAntiExfilSignature> proofs) {
         if(psbt == null) return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+        ProvenanceStatus finalizedStatus = validateFinalizedSignatures(psbt);
+        if(finalizedStatus != ProvenanceStatus.PERMITTED) return finalizedStatus;
         if(psbt.isFinalized()) {
             try {
                 return evaluateSignatureProvenance(wallet, psbt, psbt.extractTransaction(), proofs);

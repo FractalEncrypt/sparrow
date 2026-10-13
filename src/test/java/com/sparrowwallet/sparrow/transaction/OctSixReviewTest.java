@@ -52,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * October review cases converted to repaired-behavior regressions; original vulnerable-behavior
  * evidence remains preserved in the independent assessment/review checkouts.
- * The E1 Optional-invalid cases still characterize an unresolved finding, not a passing repair claim.
+ * E1 now asserts rejection of invalid finalized Optional signatures on fresh import and egress.
  * Uses the same real path as SequentialProtectedCompletionTest:
  * EventBus -> AppController.viewPSBT -> handleTransactionMerge, with the real Drongo coordinator.
  * Testnet4 public test vectors only. Nothing is broadcast.
@@ -285,14 +285,14 @@ public class OctSixReviewTest {
             try(Harness h = new Harness(f.wallet, copy(f.psbt))) {
                 h.assertRejectedUnchanged(finalized, f.psbt, Set.of());
                 System.out.println("E1 merge path: alerts=" + h.alerts);
-                assertTrue(h.alerts.toString().contains("Invalid PSBT"), h.alerts.toString());
+                assertTrue(h.alerts.toString().contains("INVALID_PROVENANCE"), h.alerts.toString());
             }
             return null;
         });
     }
 
     /** Fresh import (no unfinalized matching tab): the only check is PSBT.verifySignatures(), which skips final fields. */
-    @Test void finalizedInvalidOptionalSignatureFreshImportPredicates() throws Exception {
+    @Test void finalizedInvalidOptionalSignatureFreshImportPredicatesRejectInvalid() throws Exception {
         Fixture f = fixture("OO");
         PSBT finalized = invalidOptionalFinalized(f);
         String witness = verifyFinalizedIfAvailable(copy(f.psbt), finalized);
@@ -305,7 +305,7 @@ public class OctSixReviewTest {
         data.setSigningWallet(f.wallet);
         AntiExfilPolicy.ProvenanceStatus status = AntiExfilPolicy.evaluatePsbtEgress(data);
         System.out.println("E1 fresh-import predicates OO: verifySignatures=ok verifySigHashes=ok evaluatePsbtEgress=" + status);
-        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED, status);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.INVALID_PROVENANCE, status);
 
         // RO: A Required with a real protected proof, B Optional with an invalid signature.
         Fixture ro = fixture("RO");
@@ -320,11 +320,11 @@ public class OctSixReviewTest {
         roData.setSigningWallet(ro.wallet);
         AntiExfilPolicy.ProvenanceStatus roStatus = AntiExfilPolicy.evaluatePsbtEgress(roData);
         System.out.println("E1 fresh-import predicates RO (input has a Required participant): " + roStatus);
-        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE, roStatus);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.INVALID_PROVENANCE, roStatus);
     }
 
     /** Fresh import through the real event path into a new tab (no open tab holds this transaction). */
-    @Test void finalizedInvalidOptionalSignatureOpensNewTabOnFreshImport() throws Exception {
+    @Test void finalizedInvalidOptionalSignatureDoesNotOpenNewTabOnFreshImport() throws Exception {
         Fixture f = fixture("OO");
         PSBT finalized = invalidOptionalFinalized(f);
         PSBT unrelated = copy(f.psbt);
@@ -345,10 +345,30 @@ public class OctSixReviewTest {
                     System.out.println("E1 event path: new tab finalized=" + openedData.getPsbt().isFinalized()
                             + " signingWallet=" + openedData.getSigningWallet());
                 }
-                h.eventErrors.clear();
+                assertEquals(before, h.tabs.getTabs().size(), "invalid finalized import must not open a new tab");
+                assertTrue(h.alerts.toString().contains("Invalid PSBT"), h.alerts.toString());
+                assertNull(failure);
+                assertTrue(h.eventErrors.isEmpty(), h.eventErrors.toString());
             }
             return null;
         });
+    }
+
+    @Test void validFinalizedOptionalImportAndUnknownContextHaveDistinctEgress() throws Exception {
+        Fixture f = fixture("OO");
+        PSBT valid = ordinarySign(ordinarySign(copy(f.psbt), f, 0), f, 1);
+        f.wallet.finalise(valid);
+        assertTrue(valid.verifyKnownFinalizedSignatures());
+        TransactionData data = new TransactionData("valid finalized Optional", valid);
+        data.setSigningWallet(f.wallet);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED, AntiExfilPolicy.evaluatePsbtEgress(data));
+        PSBT unknown = copy(valid);
+        unknown.getPsbtInputs().getFirst().setWitnessUtxo(null);
+        unknown.getPsbtInputs().getFirst().setNonWitnessUtxo(null);
+        assertFalse(unknown.verifyKnownFinalizedSignatures());
+        TransactionData held = new TransactionData("unknown final context", unknown);
+        held.setSigningWallet(f.wallet);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE, AntiExfilPolicy.evaluatePsbtEgress(held));
     }
 
     // ---------------------------------------------------------------------------------------------

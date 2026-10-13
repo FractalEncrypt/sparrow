@@ -422,7 +422,7 @@ public class SequentialProtectedCompletionTest {
                 h.post(a, f.psbt);
                 h.assertRejectedUnchanged(finalized, a.signed, Set.of());
                 assertFalse(h.data.getPsbt().isFinalized());
-                assertTrue(h.alerts.toString().contains("Invalid PSBT"), h.alerts.toString());
+                assertTrue(h.alerts.toString().contains("INVALID_PROVENANCE"), h.alerts.toString());
             }
             return null;
         });

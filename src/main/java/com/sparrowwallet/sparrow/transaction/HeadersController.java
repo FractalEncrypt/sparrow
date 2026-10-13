@@ -106,6 +106,7 @@ public class HeadersController extends TransactionFormController implements Init
     // Preserve established policy authority across wallet-close quarantine. Explicit keystore policy edits
     // affect this same wallet object; choosing an Optional convenience duplicate does not edit its policy.
     private Wallet retainedRequiredPolicyWallet;
+    private String retainedRequiredPolicyWalletId;
 
 
     @FXML
@@ -1505,6 +1506,11 @@ public class HeadersController extends TransactionFormController implements Init
             return;
         }
 
+        //The device receives the live PSBT, including any signature that has not satisfied protected-signing policy
+        if(!requirePermittedPsbtEgress("send this PSBT to a signing device")) {
+            return;
+        }
+
         DeviceSignDialog dlg = new DeviceSignDialog(headersForm.getSigningWallet(), fingerprints, headersForm.getPsbt());
         dlg.initOwner(signButton.getScene().getWindow());
         dlg.initModality(Modality.NONE);
@@ -1873,7 +1879,7 @@ public class HeadersController extends TransactionFormController implements Init
         return evaluateTransactionProvenance(headersForm.getTransactionData());
     }
 
-    static AntiExfilPolicy.ProvenanceStatus evaluateTransactionProvenance(TransactionData transactionData) {
+    public static AntiExfilPolicy.ProvenanceStatus evaluateTransactionProvenance(TransactionData transactionData) {
         if(transactionData.getPsbt() == null) {
             return getRawTransactionProvenance(transactionData);
         }
@@ -2197,11 +2203,15 @@ public class HeadersController extends TransactionFormController implements Init
 
             Map<Wallet, Storage> availableWalletsMap = new LinkedHashMap<>(event.getWalletsMap());
             availableWalletsMap.keySet().retainAll(availableWallets);
-            headersForm.getAvailableWallets().keySet().retainAll(availableWallets);
-            headersForm.getAvailableWallets().putAll(availableWalletsMap);
             // Closing a wallet must not replace an established Required authority with an Optional duplicate.
             Wallet boundWallet = headersForm.getSigningWallet();
-            if(AntiExfilPolicy.requiresProtectedSigning(boundWallet)) retainedRequiredPolicyWallet = boundWallet;
+            if(AntiExfilPolicy.requiresProtectedSigning(boundWallet)) {
+                retainedRequiredPolicyWallet = boundWallet;
+                Storage storage = headersForm.getAvailableWallets().get(boundWallet);
+                if(storage != null) retainedRequiredPolicyWalletId = storage.getWalletId(boundWallet);
+            }
+            headersForm.getAvailableWallets().keySet().retainAll(availableWallets);
+            headersForm.getAvailableWallets().putAll(availableWalletsMap);
             if(!AntiExfilPolicy.requiresProtectedSigning(retainedRequiredPolicyWallet)) retainedRequiredPolicyWallet = null;
             if(!availableWallets.isEmpty() && retainedRequiredPolicyWallet != null
                     && retainedRequiredPolicyWallet.canSign(headersForm.getPsbt())
@@ -2285,6 +2295,52 @@ public class HeadersController extends TransactionFormController implements Init
             }
         }
         return permittedWallet;
+    }
+
+    @Subscribe
+    public void keystoreAntiExfilPoliciesChanged(KeystoreAntiExfilPoliciesChangedEvent event) {
+        refreshPolicyAuthority(event);
+    }
+
+    @Subscribe
+    public void walletAddressesChanged(WalletAddressesChangedEvent event) {
+        refreshPolicyAuthority(event);
+    }
+
+    private void refreshPolicyAuthority(WalletSettingsChangedEvent event) {
+        Wallet current = headersForm.getSigningWallet();
+        boolean currentChanged = current == event.getWallet();
+        Map<Wallet, Storage> available = headersForm.getAvailableWallets();
+        for(Map.Entry<Wallet, Storage> entry : new ArrayList<>(available.entrySet())) {
+            Storage storage = entry.getValue();
+            if(storage != null && Objects.equals(event.getWalletId(), storage.getWalletId(entry.getKey()))) {
+                currentChanged |= current == entry.getKey();
+                available.remove(entry.getKey());
+                available.put(event.getWallet(), storage);
+            }
+        }
+        if(retainedRequiredPolicyWallet == event.getWallet()
+                || (retainedRequiredPolicyWalletId != null
+                    && retainedRequiredPolicyWalletId.equals(event.getWalletId()))) {
+            currentChanged |= current == retainedRequiredPolicyWallet;
+            retainedRequiredPolicyWallet = AntiExfilPolicy.requiresProtectedSigning(event.getWallet())
+                    ? event.getWallet() : null;
+            if(retainedRequiredPolicyWallet == null) retainedRequiredPolicyWalletId = null;
+        }
+        if(currentChanged) {
+            headersForm.setSigningWallet(null); // Force the property listener to refresh policy controls.
+            Wallet replacement = event.getWallet();
+            if(headersForm.getPsbt() != null) {
+                List<Wallet> candidates = new ArrayList<>(available.keySet());
+                if(retainedRequiredPolicyWallet != null) candidates.add(retainedRequiredPolicyWallet);
+                candidates.add(replacement);
+                replacement = selectPsbtPolicyWallet(candidates, headersForm.getPsbt(),
+                        headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+            }
+            headersForm.setSigningWallet(replacement);
+            applyProvenanceQuarantine();
+            EventManager.get().post(new RequestOpenWalletsEvent());
+        }
     }
 
     /**
