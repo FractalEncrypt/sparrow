@@ -75,6 +75,98 @@ public class SequentialProtectedCompletionTest {
         else System.clearProperty("sparrow.home");
     }
 
+    // Independent Codex review: valid proof retention for a real two-input mixed-finalized PSBT.
+    @Test void codexMixedFinalizationRetainsAllVerifiedProofs() throws Exception {
+        Fixture f = fixture(2, "RR");
+        Transaction transaction = new Transaction(f.psbt.getTransaction().bitcoinSerialize());
+        transaction.addInput(Sha256Hash.wrap(new byte[]{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}), 0, new Script(new byte[0]));
+        PSBT twoInputs = new PSBT(transaction);
+        for(var input : twoInputs.getPsbtInputs()) {
+            input.setWitnessUtxo(f.psbt.getPsbtInputs().getFirst().getWitnessUtxo());
+            input.setWitnessScript(f.psbt.getPsbtInputs().getFirst().getWitnessScript());
+            input.getDerivedPublicKeys().putAll(f.psbt.getPsbtInputs().getFirst().getDerivedPublicKeys());
+        }
+        Run a = complete(twoInputs, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
+        Run b = complete(a.signed, f.privateSigners.get(1), f.wallet.getKeystores().get(1));
+        Set<VerifiedAntiExfilSignature> proofs = union(a, b);
+        assertEquals(4, proofs.size());
+        PSBT finalized = copy(b.signed);
+        f.wallet.finalise(finalized);
+        assertTrue(finalized.isFinalized());
+        PSBT mixed = copy(b.signed);
+        mixed.getPsbtInputs().getFirst().setFinalScriptWitness(finalized.getPsbtInputs().getFirst().getFinalScriptWitness());
+        mixed.getPsbtInputs().getFirst().setFinalScriptSig(finalized.getPsbtInputs().getFirst().getFinalScriptSig());
+        mixed.getPsbtInputs().getFirst().clearNonFinalFields();
+        assertFalse(mixed.isFinalized());
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, mixed, proofs));
+        assertEquals(proofs, AntiExfilPolicy.retainMatchingProofs(f.wallet, mixed, proofs));
+        assertEquals(proofs, AntiExfilPolicy.retainMatchingProofs(f.wallet, finalized, proofs));
+
+        TransactionData merged = new TransactionData("mixed-merge", copy(a.signed));
+        merged.setSigningWallet(f.wallet);
+        merged.addVerifiedAntiExfilSignatures(a.completion.getVerifiedSignatures());
+        merged.combineVerifiedPsbt(mixed, proofs);
+        assertEquals(proofs, merged.getVerifiedAntiExfilSignatures());
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED, AntiExfilPolicy.evaluatePsbtEgress(merged));
+        assertNotNull(merged.getPsbt().getPsbtInputs().getFirst().getFinalScriptWitness());
+        assertFalse(merged.getPsbt().isFinalized());
+
+        // An invalid final signature must be rejected before the live transaction or proof set changes.
+        PSBT badFinal = copy(b.signed);
+        ECKey bKey = childKey(f.privateSigners.get(1));
+        badFinal.getPsbtInputs().getFirst().getPartialSignatures().put(ECKey.fromPublicOnly(bKey.getPubKey()),
+                bKey.sign(Sha256Hash.ZERO_HASH, SigHash.ALL, TransactionSignature.Type.ECDSA));
+        f.wallet.finalise(badFinal);
+        PSBT badMixed = copy(mixed);
+        badMixed.getPsbtInputs().getFirst().setFinalScriptWitness(badFinal.getPsbtInputs().getFirst().getFinalScriptWitness());
+        TransactionData rejected = new TransactionData("bad-mixed", copy(a.signed));
+        rejected.setSigningWallet(f.wallet);
+        rejected.addVerifiedAntiExfilSignatures(a.completion.getVerifiedSignatures());
+        byte[] before = rejected.getPsbt().serialize();
+        assertThrows(com.sparrowwallet.drongo.psbt.PSBTSignatureException.class,
+                () -> rejected.combineVerifiedPsbt(badMixed, proofs));
+        assertArrayEquals(before, rejected.getPsbt().serialize());
+        assertEquals(a.completion.getVerifiedSignatures(), rejected.getVerifiedAntiExfilSignatures());
+        fx(() -> {
+            try(Harness h = new Harness(f.wallet, copy(a.signed))) {
+                h.data.addVerifiedAntiExfilSignatures(a.completion.getVerifiedSignatures());
+                h.assertRejectedUnchanged(badMixed, a.signed, proofs);
+                h.alerts.clear();
+                h.post(mixed, a.signed, proofs);
+                assertEquals(1, h.observer.merges, h.alerts.toString());
+                assertTrue(h.alerts.isEmpty(), h.alerts.toString());
+                assertEquals(proofs, h.data.getVerifiedAntiExfilSignatures());
+                assertNotNull(h.data.getPsbt().getPsbtInputs().getFirst().getFinalScriptWitness());
+            }
+            return null;
+        });
+
+
+
+        // Fresh deserialization and durable session revalidation, without relying on in-memory proofs.
+        Path root = temporary.resolve("mixed-restore");
+        Path journals = temporary.resolve("mixed-journals");
+        Files.createDirectories(journals);
+        for(Run run : List.of(a, b)) {
+            String identity = Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(run.signer));
+            Path directory = root.resolve(identity);
+            Files.createDirectories(directory);
+            Files.copy(run.session, directory.resolve("complete.aexs"));
+            Files.copy(run.journal, journals.resolve(identity + ".aexj"));
+        }
+        PSBT reopened = new PSBT(mixed.serialize(), false);
+        Set<VerifiedAntiExfilSignature> restored = AntiExfilProvenanceStore.resolve(root, journals, f.wallet, reopened);
+        assertEquals(proofs, restored);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
+                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, reopened, restored));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
+                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, reopened, Set.of()));
+        reopened.getTransaction().setLocktime(12345);
+        assertTrue(AntiExfilPolicy.retainMatchingProofs(f.wallet, reopened, proofs).isEmpty());
+        assertTrue(AntiExfilProvenanceStore.resolve(root, journals, f.wallet, reopened).isEmpty());
+    }
+
     @TestFactory Stream<DynamicTest> sequentialCompletionMatrix() {
         List<DynamicTest> tests = new ArrayList<>();
         for(int size : List.of(2, 3)) {
@@ -583,13 +675,16 @@ public class SequentialProtectedCompletionTest {
         AntiExfilMessage commit = AntiExfilCodec.decode(coordinator.getHostCommitMessage());
         BigInteger nonce = BigInteger.valueOf(1000L + id);
         byte[] opening = ECKey.fromPrivate(nonce).getPubKey();
-        List<AntiExfilSlot> openings = commit.getSlots().stream().map(slot -> slot(slot, opening, null)).toList();
+        List<AntiExfilSlot> openings = commit.getSlots().stream().map(slot -> slot(slot,
+                ECKey.fromPrivate(BigInteger.valueOf(1000L + id).add(BigInteger.valueOf(slot.getInputIndex()))).getPubKey(), null)).toList();
         byte[] revealed = coordinator.acceptOpenings(AntiExfilCodec.encode(message(commit,
                 AntiExfilStage.SIGNER_OPENINGS, openings)));
         AntiExfilMessage reveal = AntiExfilCodec.decode(revealed);
         ECKey privateKey = childKey(privateSigner);
         List<AntiExfilSlot> signatures = new ArrayList<>();
         for(AntiExfilSlot slot : reveal.getSlots()) {
+            nonce = BigInteger.valueOf(1000L + id).add(BigInteger.valueOf(slot.getInputIndex()));
+            opening = ECKey.fromPrivate(nonce).getPubKey();
             assertArrayEquals(privateKey.getPubKey(), slot.getSignerPublicKey());
             BigInteger tweak = new BigInteger(1, Utils.taggedHash("s2c/ecdsa/point",
                     Utils.concat(opening, slot.getHostRandomness())));

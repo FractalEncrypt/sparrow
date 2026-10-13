@@ -5,14 +5,19 @@ import com.sparrowwallet.drongo.antiexfil.AntiExfilCoordinator;
 import com.sparrowwallet.drongo.antiexfil.VerifiedAntiExfilSignature;
 import com.sparrowwallet.drongo.crypto.ECDSASignature;
 import com.sparrowwallet.drongo.crypto.ECKey;
+import com.sparrowwallet.drongo.policy.PolicyType;
+import com.sparrowwallet.drongo.protocol.ScriptType;
+import com.sparrowwallet.drongo.protocol.Script;
 import com.sparrowwallet.drongo.protocol.SigHash;
 import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.protocol.TransactionInput;
 import com.sparrowwallet.drongo.protocol.TransactionSignature;
+import com.sparrowwallet.drongo.protocol.TransactionWitness;
 import com.sparrowwallet.drongo.psbt.PSBT;
 import com.sparrowwallet.drongo.psbt.PSBTInput;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.Wallet;
+import com.sparrowwallet.drongo.wallet.WalletNode;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -81,6 +86,7 @@ public final class AntiExfilPolicy {
 
         Set<VerifiedAntiExfilSignature> matchedProofs = new HashSet<>();
         try {
+            psbt = withWalletDerivations(wallet, psbt, availableProofs);
             for(int inputIndex = 0; inputIndex < psbt.getPsbtInputs().size(); inputIndex++) {
                 PSBTInput input = psbt.getPsbtInputs().get(inputIndex);
                 for(Map.Entry<ECKey, TransactionSignature> signatureEntry : input.getPartialSignatures().entrySet()) {
@@ -98,6 +104,23 @@ public final class AntiExfilPolicy {
                         return ProvenanceStatus.REQUIRED_PROOF_MISSING;
                     }
                 }
+                //A partially finalized PSBT can carry some inputs' signatures only in final_scriptwitness or
+                //final_scriptSig; isFinalized() is false, so the partial-signature map above would miss them.
+                for(TransactionSignature signature : getFinalInputSignatures(input)) {
+                    AttributedFinalSignature attributed = attributeFinalSignature(wallet, input, signature);
+                    if(attributed == null) {
+                        if(hasRequiredParticipant(wallet, input)) {
+                            return ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE;
+                        }
+                        continue;
+                    }
+                    VerifiedAntiExfilSignature matching = findMatchingProof(availableProofs,
+                            attributed.signer(), input, inputIndex, attributed.publicKey(), signature);
+                    if(matching != null) matchedProofs.add(matching);
+                    if(attributed.signer().isAntiExfilRequired() && matching == null) {
+                        return ProvenanceStatus.REQUIRED_PROOF_MISSING;
+                    }
+                }
             }
         } catch(RuntimeException exception) {
             return ProvenanceStatus.INVALID_PROVENANCE;
@@ -111,30 +134,26 @@ public final class AntiExfilPolicy {
     public static Set<VerifiedAntiExfilSignature> retainMatchingProofs(Wallet wallet, PSBT psbt,
                                                                        Collection<VerifiedAntiExfilSignature> proofs) {
         if(wallet == null || psbt == null || proofs == null || proofs.isEmpty()) return Collections.emptySet();
+        Set<VerifiedAntiExfilSignature> availableProofs = Set.copyOf(proofs);
         Set<VerifiedAntiExfilSignature> matching = new HashSet<>();
         try {
-            if(psbt.isFinalized()) {
-                Transaction transaction = psbt.extractTransaction();
-                for(int inputIndex = 0; inputIndex < psbt.getPsbtInputs().size(); inputIndex++) {
-                    PSBTInput input = psbt.getPsbtInputs().get(inputIndex);
-                    for(TransactionSignature signature : getFinalSignatures(transaction.getInputs().get(inputIndex))) {
-                        AttributedFinalSignature attributed = attributeFinalSignature(wallet, input, signature);
-                        if(attributed == null) continue;
-                        VerifiedAntiExfilSignature proof = findMatchingProof(Set.copyOf(proofs),
-                                attributed.signer(), input, inputIndex, attributed.publicKey(), signature);
-                        if(proof != null) matching.add(proof);
-                    }
+            psbt = withWalletDerivations(wallet, psbt, availableProofs);
+            for(int inputIndex = 0; inputIndex < psbt.getPsbtInputs().size(); inputIndex++) {
+                PSBTInput input = psbt.getPsbtInputs().get(inputIndex);
+                for(Map.Entry<ECKey, TransactionSignature> signatureEntry : input.getPartialSignatures().entrySet()) {
+                    Keystore signer = attributeSigner(wallet, input, signatureEntry.getKey());
+                    if(signer == null) continue;
+                    VerifiedAntiExfilSignature proof = findMatchingProof(availableProofs, signer, input,
+                            inputIndex, signatureEntry.getKey(), signatureEntry.getValue());
+                    if(proof != null) matching.add(proof);
                 }
-            } else {
-                for(int inputIndex = 0; inputIndex < psbt.getPsbtInputs().size(); inputIndex++) {
-                    PSBTInput input = psbt.getPsbtInputs().get(inputIndex);
-                    for(Map.Entry<ECKey, TransactionSignature> signatureEntry : input.getPartialSignatures().entrySet()) {
-                        Keystore signer = attributeSigner(wallet, input, signatureEntry.getKey());
-                        if(signer == null) continue;
-                        VerifiedAntiExfilSignature proof = findMatchingProof(Set.copyOf(proofs), signer, input,
-                                inputIndex, signatureEntry.getKey(), signatureEntry.getValue());
-                        if(proof != null) matching.add(proof);
-                    }
+                // Mirror provenance evaluation per input, including final fields in a mixed-finalized PSBT.
+                for(TransactionSignature signature : getFinalInputSignatures(input)) {
+                    AttributedFinalSignature attributed = attributeFinalSignature(wallet, input, signature);
+                    if(attributed == null) continue;
+                    VerifiedAntiExfilSignature proof = findMatchingProof(availableProofs,
+                            attributed.signer(), input, inputIndex, attributed.publicKey(), signature);
+                    if(proof != null) matching.add(proof);
                 }
             }
         } catch(Exception ignored) {
@@ -153,6 +172,7 @@ public final class AntiExfilPolicy {
         Set<VerifiedAntiExfilSignature> matchedProofs = new HashSet<>();
         boolean attributedAny = false;
         try {
+            contextPsbt = withWalletDerivations(wallet, contextPsbt, availableProofs);
             if(transaction.getInputs().size() != contextPsbt.getPsbtInputs().size()) {
                 return ProvenanceStatus.INVALID_PROVENANCE;
             }
@@ -243,6 +263,15 @@ public final class AntiExfilPolicy {
         return new ArrayList<>(signatures);
     }
 
+    private static List<TransactionSignature> getFinalInputSignatures(PSBTInput input) {
+        Set<TransactionSignature> signatures = new LinkedHashSet<>();
+        TransactionWitness witness = input.getFinalScriptWitness();
+        if(witness != null) signatures.addAll(witness.getSignatures());
+        Script scriptSig = input.getFinalScriptSig();
+        if(scriptSig != null) signatures.addAll(scriptSig.getSignatures());
+        return new ArrayList<>(signatures);
+    }
+
     private static VerifiedAntiExfilSignature findMatchingProof(Set<VerifiedAntiExfilSignature> proofs,
                                                                  Keystore signer, PSBTInput input, int inputIndex,
                                                                  ECKey publicKey, TransactionSignature signature) {
@@ -268,6 +297,31 @@ public final class AntiExfilPolicy {
         BigInteger r = new BigInteger(1, Arrays.copyOfRange(compact, 0, 32));
         BigInteger s = new BigInteger(1, Arrays.copyOfRange(compact, 32, 64));
         return new TransactionSignature(new ECDSASignature(r, s), SigHash.ALL);
+    }
+
+    /**
+     * Returns a copy of the PSBT whose inputs carry the BIP32 derivations of every keystore of the wallet node
+     * that the input's UTXO script belongs to. A returned PSBT may omit, truncate or relabel its derivations
+     * (SeedSigner's trimmed output carries none), so attribution must not depend on what the PSBT chose to keep.
+     * Derivations are still verified against the keystore xpubs by attributeSigner before they attribute anything.
+     * Without a Required keystore or a proof to match, attribution cannot change the result, so the PSBT is used as is.
+     */
+    private static PSBT withWalletDerivations(Wallet wallet, PSBT psbt, Collection<VerifiedAntiExfilSignature> proofs) {
+        if(!requiresProtectedSigning(wallet) && (proofs == null || proofs.isEmpty())) return psbt;
+        if(wallet.getPolicyType() == PolicyType.SINGLE_SP) return psbt;
+        PSBT copy = psbt.copy();
+        Map<PSBTInput, WalletNode> signingNodes = wallet.getSigningNodes(copy);
+        for(PSBTInput input : copy.getPsbtInputs()) {
+            WalletNode node = signingNodes.get(input);
+            Wallet nodeWallet = node == null ? null : node.getWallet();
+            if(nodeWallet == null || nodeWallet.getScriptType() == null || nodeWallet.getScriptType() == ScriptType.P2TR) continue;
+            for(Keystore keystore : nodeWallet.getKeystores()) {
+                if(keystore.getExtendedPublicKey() == null || keystore.getKeyDerivation() == null) continue;
+                ECKey publicKey = nodeWallet.getScriptType().getOutputKey(nodeWallet.getPolicyType(), keystore.getPubKey(node));
+                input.getDerivedPublicKeys().put(publicKey, keystore.getKeyDerivation().extend(node.getDerivation()));
+            }
+        }
+        return copy;
     }
 
     private static Keystore attributeSigner(Wallet wallet, PSBTInput input, ECKey publicKey) {

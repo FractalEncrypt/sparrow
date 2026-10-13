@@ -103,6 +103,11 @@ public class HeadersController extends TransactionFormController implements Init
 
     private ElectrumServer.TransactionVerificationService verificationService;
 
+    // Preserve established policy authority across wallet-close quarantine. Explicit keystore policy edits
+    // affect this same wallet object; choosing an Optional convenience duplicate does not edit its policy.
+    private Wallet retainedRequiredPolicyWallet;
+
+
     @FXML
     private IdLabel id;
 
@@ -1232,6 +1237,11 @@ public class HeadersController extends TransactionFormController implements Init
             showErrorDialog("Anti-exfil signing unavailable", "A signing wallet and PSBT are required.");
             return;
         }
+        //The new session serializes the live PSBT, existing signatures included, into the QR egress.
+        //Gate it at handler time like every other PSBT egress; an unsigned protected start stays permitted.
+        if(!requirePermittedPsbtEgress("start a protected signing session with this PSBT")) {
+            return;
+        }
         List<KeystoreChoice> choices = getAntiExfilKeystores(wallet).stream()
                 .map(KeystoreChoice::new).toList();
         if(choices.isEmpty()) {
@@ -2189,6 +2199,15 @@ public class HeadersController extends TransactionFormController implements Init
             availableWalletsMap.keySet().retainAll(availableWallets);
             headersForm.getAvailableWallets().keySet().retainAll(availableWallets);
             headersForm.getAvailableWallets().putAll(availableWalletsMap);
+            // Closing a wallet must not replace an established Required authority with an Optional duplicate.
+            Wallet boundWallet = headersForm.getSigningWallet();
+            if(AntiExfilPolicy.requiresProtectedSigning(boundWallet)) retainedRequiredPolicyWallet = boundWallet;
+            if(!AntiExfilPolicy.requiresProtectedSigning(retainedRequiredPolicyWallet)) retainedRequiredPolicyWallet = null;
+            if(!availableWallets.isEmpty() && retainedRequiredPolicyWallet != null
+                    && retainedRequiredPolicyWallet.canSign(headersForm.getPsbt())
+                    && !availableWallets.contains(retainedRequiredPolicyWallet)) {
+                availableWallets.add(retainedRequiredPolicyWallet);
+            }
             signingWallet.setItems(FXCollections.observableList(availableWallets));
             if(headersForm.getTransactionData().hasProtectedSigningContext()
                     && !availableWallets.contains(headersForm.getSigningWallet())) {
@@ -2196,13 +2215,27 @@ public class HeadersController extends TransactionFormController implements Init
             }
 
             if(!availableWallets.isEmpty()) {
+                //WalletSignComparator ranks only by keystore source, so a same-key Optional duplicate could win the
+                //default binding and show the verified box with zero proofs. Bind the strongest-policy wallet instead.
+                Wallet policyWallet = selectPsbtPolicyWallet(availableWallets, headersForm.getPsbt(),
+                        headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+                if(policyWallet == null) {
+                    headersForm.setSigningWallet(null);
+                    signingWallet.setValue(null);
+                    applyProvenanceQuarantine();
+                    finalizeTransaction.setDisable(true);
+                    signButton.setDisable(true);
+                    AppServices.showErrorDialog("Conflicting protected-signing policies",
+                            "No available wallet enforces all Required cosigner policies. Reconcile the wallet policies before signing or finalizing.");
+                    return;
+                }
                 if(!headersForm.isEditable() && (availableWallets.size() == 1 || headersForm.getPsbt().isSigned())) {
                     signingWalletForm.setVisible(false);
                     sigHashForm.setVisible(false);
                     finalizeButtonBox.setVisible(false);
 
                     signaturesForm.setVisible(true);
-                    headersForm.setSigningWallet(availableWallets.get(0));
+                    headersForm.setSigningWallet(policyWallet);
                     signButton.setDisable(false);
 
                     if(headersForm.getPsbt().isSigned()) {
@@ -2213,10 +2246,10 @@ public class HeadersController extends TransactionFormController implements Init
                         signButtonBox.setVisible(true);
                     }
                 } else {
-                    if(availableWallets.contains(headersForm.getSigningWallet())) {
+                    if(policyWallet == headersForm.getSigningWallet()) {
                         signingWallet.setValue(headersForm.getSigningWallet());
                     } else {
-                        signingWallet.setValue(availableWallets.get(0));
+                        signingWallet.setValue(policyWallet);
                     }
                     noWalletsWarning.setVisible(false);
                     signingWallet.setVisible(true);
@@ -2254,6 +2287,27 @@ public class HeadersController extends TransactionFormController implements Init
         return permittedWallet;
     }
 
+    /**
+     * Policy authority is independent of current signatures and proofs. Choose an applicable wallet that
+     * covers every Required key in the candidate set. Incomparable policies fail closed instead of ranking
+     * by count and silently dropping a different Required cosigner. Equal policy preserves source order.
+     */
+    static Wallet selectPsbtPolicyWallet(Collection<Wallet> wallets, PSBT psbt,
+                                         Set<VerifiedAntiExfilSignature> proofs) {
+        Map<Wallet, Set<String>> policies = new LinkedHashMap<>();
+        Set<String> requiredKeys = new HashSet<>();
+        for(Wallet wallet : wallets) {
+            if(!wallet.canSign(psbt)) continue;
+            Set<String> keys = wallet.getKeystores().stream().filter(Keystore::isAntiExfilRequired)
+                    .map(key -> Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(key)))
+                    .collect(Collectors.toSet());
+            policies.put(wallet, keys);
+            requiredKeys.addAll(keys);
+        }
+        return policies.entrySet().stream().filter(entry -> entry.getValue().containsAll(requiredKeys))
+                .map(Map.Entry::getKey).findFirst().orElse(null);
+    }
+
     private void refreshRawTransactionPolicyWallet(Collection<Wallet> wallets) {
         if(headersForm.getPsbt() != null) return;
         headersForm.setSigningWallet(selectRawTransactionPolicyWallet(
@@ -2273,7 +2327,18 @@ public class HeadersController extends TransactionFormController implements Init
             locktimeCurrentHeight.setVisible(false);
             updateTxId();
 
-            headersForm.setSigningWallet(event.getSigningWallet());
+            List<Wallet> policyWallets = new ArrayList<>(headersForm.getAvailableWallets().keySet());
+            if(headersForm.getSigningWallet() != null) policyWallets.add(headersForm.getSigningWallet());
+            if(AntiExfilPolicy.requiresProtectedSigning(retainedRequiredPolicyWallet)) policyWallets.add(retainedRequiredPolicyWallet);
+            if(event.getSigningWallet() != null) policyWallets.add(event.getSigningWallet());
+            Wallet policyWallet = selectPsbtPolicyWallet(policyWallets, headersForm.getPsbt(),
+                    headersForm.getTransactionData().getVerifiedAntiExfilSignatures());
+            if(policyWallet == null) {
+                AppServices.showErrorDialog("Conflicting protected-signing policies",
+                        "No available wallet enforces all Required cosigner policies. Reconcile the wallet policies before signing or finalizing.");
+                return;
+            }
+            headersForm.setSigningWallet(policyWallet);
 
             signingWalletForm.setVisible(false);
             sigHashForm.setVisible(false);
@@ -2285,7 +2350,7 @@ public class HeadersController extends TransactionFormController implements Init
                 refreshProtectedCompletion();
             } else {
                 signButtonBox.setVisible(true);
-                event.getPsbt().addKeyPathInformation(event.getSigningWallet());
+                if(policyWallet != null) event.getPsbt().addKeyPathInformation(policyWallet);
             }
         }
     }
@@ -2297,10 +2362,9 @@ public class HeadersController extends TransactionFormController implements Init
             if(headersForm.getSigningWallet() != null) {
                 updateSignedKeystores(headersForm.getSigningWallet());
             } else if(headersForm.getPsbt().isSigned()) {
-                Wallet signedWallet = new FinalizingPSBTWallet(headersForm.getPsbt());
-                headersForm.setSigningWallet(signedWallet);
-                finalizePSBT();
-                EventManager.get().post(new FinalizeTransactionEvent(headersForm.getPsbt(), signedWallet));
+                //A combine without a signing wallet only admits unsigned PSBTs, so these signatures were already
+                //quarantined for missing policy context. A keystore-less FinalizingPSBTWallet must not lift that.
+                applyProvenanceQuarantine();
             }
         }
     }
