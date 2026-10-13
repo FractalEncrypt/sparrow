@@ -107,6 +107,7 @@ public class HeadersController extends TransactionFormController implements Init
     // affect this same wallet object; choosing an Optional convenience duplicate does not edit its policy.
     private Wallet retainedRequiredPolicyWallet;
     private String retainedRequiredPolicyWalletId;
+    private Storage retainedRequiredPolicyStorage;
 
 
     @FXML
@@ -2206,17 +2207,35 @@ public class HeadersController extends TransactionFormController implements Init
             // Closing a wallet must not replace an established Required authority with an Optional duplicate.
             Wallet boundWallet = headersForm.getSigningWallet();
             if(AntiExfilPolicy.requiresProtectedSigning(boundWallet)) {
+                if(retainedRequiredPolicyWallet != boundWallet) {
+                    retainedRequiredPolicyWalletId = null;
+                    retainedRequiredPolicyStorage = null;
+                }
                 retainedRequiredPolicyWallet = boundWallet;
                 Storage storage = headersForm.getAvailableWallets().get(boundWallet);
-                if(storage != null) retainedRequiredPolicyWalletId = storage.getWalletId(boundWallet);
+                if(storage != null) {
+                    retainedRequiredPolicyWalletId = storage.getWalletId(boundWallet);
+                    retainedRequiredPolicyStorage = storage;
+                }
             }
             headersForm.getAvailableWallets().keySet().retainAll(availableWallets);
             headersForm.getAvailableWallets().putAll(availableWalletsMap);
-            if(!AntiExfilPolicy.requiresProtectedSigning(retainedRequiredPolicyWallet)) retainedRequiredPolicyWallet = null;
+            if(!AntiExfilPolicy.requiresProtectedSigning(retainedRequiredPolicyWallet)) {
+                retainedRequiredPolicyWallet = null;
+                retainedRequiredPolicyWalletId = null;
+                retainedRequiredPolicyStorage = null;
+            }
             if(!availableWallets.isEmpty() && retainedRequiredPolicyWallet != null
                     && retainedRequiredPolicyWallet.canSign(headersForm.getPsbt())
                     && !availableWallets.contains(retainedRequiredPolicyWallet)) {
                 availableWallets.add(retainedRequiredPolicyWallet);
+            }
+            // Retained authority needs its original storage for session creation and proof restoration.
+            // Never borrow the same-key Optional duplicate's storage or overwrite a current event binding.
+            if(availableWallets.contains(retainedRequiredPolicyWallet)
+                    && headersForm.getAvailableWallets().get(retainedRequiredPolicyWallet) == null
+                    && retainedRequiredPolicyStorage != null) {
+                headersForm.getAvailableWallets().put(retainedRequiredPolicyWallet, retainedRequiredPolicyStorage);
             }
             signingWallet.setItems(FXCollections.observableList(availableWallets));
             if(headersForm.getTransactionData().hasProtectedSigningContext()
@@ -2325,7 +2344,10 @@ public class HeadersController extends TransactionFormController implements Init
             currentChanged |= current == retainedRequiredPolicyWallet;
             retainedRequiredPolicyWallet = AntiExfilPolicy.requiresProtectedSigning(event.getWallet())
                     ? event.getWallet() : null;
-            if(retainedRequiredPolicyWallet == null) retainedRequiredPolicyWalletId = null;
+            if(retainedRequiredPolicyWallet == null) {
+                retainedRequiredPolicyWalletId = null;
+                retainedRequiredPolicyStorage = null;
+            }
         }
         if(currentChanged) {
             headersForm.setSigningWallet(null); // Force the property listener to refresh policy controls.
