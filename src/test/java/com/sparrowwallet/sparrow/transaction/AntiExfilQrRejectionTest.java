@@ -239,7 +239,7 @@ class AntiExfilQrRejectionTest {
     private byte[] hex(String field) { return Utils.hexToBytes(vector.get(field).getAsString()); }
     private AntiExfilCoordinator reload() { return coordinator; }
     private List<AntiExfilAbortJournal.AbortEvent> events() {
-        return new AntiExfilAbortJournal(journal, AntiExfilCoordinator.getWalletKeyIdentity(signer)).getEvents();
+        return new AntiExfilAbortJournal(journal, AntiExfilCoordinator.getSigningKeyHistoryIdentity(signer)).getEvents();
     }
     private void assertOneEvent(AntiExfilCoordinator.AbortReason reason) {
         var events = events();

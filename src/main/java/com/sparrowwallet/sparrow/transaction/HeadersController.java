@@ -1276,12 +1276,15 @@ public class HeadersController extends TransactionFormController implements Init
                     .resolve("sessions").resolve(walletDirectory).resolve(keystoreDirectory);
             java.nio.file.Path sessionPath = directory.resolve(psbtId + ".aexs");
             java.nio.file.Path journalPath = Storage.getStateDir().toPath().resolve("anti-exfil")
+                    .resolve("journals").resolve("ram-" + Utils.bytesToHex(AntiExfilCoordinator.getSigningKeyHistoryIdentity(keystore)) + ".aexj");
+            java.nio.file.Path legacyJournalPath = Storage.getStateDir().toPath().resolve("anti-exfil")
                     .resolve("journals").resolve(keystoreDirectory + ".aexj");
             AntiExfilNetwork network = antiExfilNetwork();
 
             // Legacy sessions are never restored. Their mere presence for this account
             // conservatively blocks a new challenge without reading secret-bearing contents.
             java.nio.file.Path legacyRoot = Storage.getStateDir().toPath().resolve("anti-exfil/sessions");
+            boolean legacySessionPresent = false;
             if(java.nio.file.Files.exists(legacyRoot)) {
                 try(var wallets = java.nio.file.Files.list(legacyRoot)) {
                     for(java.nio.file.Path oldWallet : wallets.toList()) {
@@ -1289,14 +1292,14 @@ public class HeadersController extends TransactionFormController implements Init
                         if(java.nio.file.Files.exists(oldKey)) {
                             try(var files = java.nio.file.Files.list(oldKey)) {
                                 if(files.anyMatch(file -> file.getFileName().toString().endsWith(".aexs"))) {
-                                    throw new AntiExfilException(AntiExfilException.Code.RETRY_CONFLICT,
-                                            "Legacy secret-bearing session history exists for this account. It is preserved and cannot be resumed by the RAM-only design. Fresh Protected QR is conservatively refused. Show QR remains available for ordinary signing.");
+                                    legacySessionPresent = true;
                                 }
                             }
                         }
                     }
                 }
             }
+            AntiExfilCoordinator.preserveLegacyHistory(journalPath, legacyJournalPath, legacySessionPresent, keystore);
             try(AntiExfilCoordinator coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network)) {
             AntiExfilSigningFlow.Result result = AntiExfilSigningFlow.execute(coordinator, network,
                     new AntiExfilQrExchange(antiExfilButton.getScene().getWindow(),
