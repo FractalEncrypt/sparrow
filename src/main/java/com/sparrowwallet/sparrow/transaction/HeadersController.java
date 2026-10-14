@@ -623,15 +623,13 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         headersForm.signingWalletProperty().addListener((observable, oldValue, signingWallet) -> {
+            antiExfilButton.setVisible(signingWallet != null && !getAntiExfilKeystores(signingWallet).isEmpty());
             if(signingWallet == null) {
                 applyProvenanceQuarantine();
                 return;
             }
             reloadVerifiedAntiExfilSignatures(signingWallet);
             initializeSignButton(signingWallet);
-            boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
-                    .anyMatch(keystore -> keystore.supportsAntiExfil()
-                            && AntiExfilDeviceRegistry.capability(keystore) != null);
             antiExfilButton.setText("Protected QR");
             antiExfilButton.setDefaultButton(false);
             signButton.setDefaultButton(true);
