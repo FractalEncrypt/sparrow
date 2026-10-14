@@ -79,13 +79,25 @@ class ProtectedQrEntryPointGuiTest {
                         @Override public String getWalletId(Wallet ignored){return "public-isolated-"+model;}
                     });
                     java.util.concurrent.atomic.AtomicReference<String> shown=new java.util.concurrent.atomic.AtomicReference<>();
+                    java.util.concurrent.atomic.AtomicReference<String> displayedUr=new java.util.concurrent.atomic.AtomicReference<>();
+                    java.util.concurrent.atomic.AtomicInteger ticks=new java.util.concurrent.atomic.AtomicInteger();
                     Timeline cancel=new Timeline(new KeyFrame(Duration.millis(100),event->{
+                        ticks.incrementAndGet();
                         for(Window window:new ArrayList<>(Window.getWindows())){
                             if(window==v.stage||window.getScene()==null)continue;
                             Node found=window.getScene().getRoot().lookup(".dialog-pane");
                             if(found instanceof DialogPane pane){
                                 shown.set(pane.getHeaderText());
                                 if(pane.getHeaderText()!=null&&pane.getHeaderText().startsWith("Step 1 of 2:")){
+                                    for(Node imageNode:pane.lookupAll(".image-view")){
+                                        if(imageNode instanceof javafx.scene.image.ImageView view&&view.getImage()!=null&&view.getImage().getWidth()>=500){
+                                            var qr=view.getImage();int width=(int)qr.getWidth(),height=(int)qr.getHeight();int[] pixels=new int[width*height];
+                                            qr.getPixelReader().getPixels(0,0,width,height,javafx.scene.image.PixelFormat.getIntArgbInstance(),pixels,0,width);
+                                            try{displayedUr.set(new com.google.zxing.qrcode.QRCodeReader().decode(new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(new com.google.zxing.RGBLuminanceSource(width,height,pixels)))).getText());}
+                                            catch(com.google.zxing.ReaderException notReady){/* Wait for an actual decodable frame. */}
+                                        }
+                                    }
+                                    if(displayedUr.get()==null&&ticks.get()<90)continue;
                                     try{snapshot(pane,model+"-step-one");}catch(Exception e){throw new RuntimeException(e);}
                                 }
                                 pane.getButtonTypes().stream().filter(b->b.getButtonData()==ButtonBar.ButtonData.CANCEL_CLOSE)
@@ -97,6 +109,8 @@ class ProtectedQrEntryPointGuiTest {
                     try{((Button)v.nodes.get("antiExfilButton")).fire();}finally{cancel.stop();}
                     assertNotNull(shown.get(),"Click must display the actual commitment dialog");
                     assertTrue(shown.get().startsWith("Step 1 of 2: scan this commitment with "),shown.get());
+                    assertNotNull(displayedUr.get(),"Step 1 must display a decodable QR image, not only open a dialog");
+                    assertTrue(displayedUr.get().toUpperCase(Locale.ROOT).startsWith("UR:X-BTC-ANTI-EXFIL/"),displayedUr.get());
                     assertFalse(v.data.getPsbt().hasSignatures());
                     snapshot(v.stage.getScene().getRoot(),model+"-signing-controls");return null;
                 });
