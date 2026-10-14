@@ -111,7 +111,7 @@ class AntiExfilQrRejectionTest {
         Exchange exchange = new Exchange();
         exchange.scans.add(scan(hex("message_4_hex")));
         assertCode(AntiExfilException.Code.WRONG_STAGE, exchange);
-        assertTrue(events().isEmpty());
+        assertEquals(0, summary().possibleReveals());
         assertEquals(List.of(AntiExfilStage.HOST_COMMIT), exchange.stages);
         assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
         assertFalse(java.nio.file.Files.exists(session));
@@ -123,7 +123,7 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(scan(hex("message_2_hex")));
         exchange.scans.add(scan(hex("message_2_hex")));
         assertCode(AntiExfilException.Code.WRONG_STAGE, exchange);
-        assertEquals("PENDING_REVEAL", events().getFirst().getReason());
+        assertEquals(1, summary().possibleReveals()); assertEquals(1, summary().unfinishedAfterReveal());
         assertEquals(AntiExfilCoordinator.Phase.CLOSED, reload().getStatus().getPhase());
         assertThrows(AntiExfilException.class, () -> reload().complete(hex("message_4_hex")));
     }
@@ -133,7 +133,7 @@ class AntiExfilQrRejectionTest {
         Exchange exchange = new Exchange();
         exchange.displayResults.add(false);
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
-        assertTrue(events().isEmpty());
+        assertEquals(0, summary().possibleReveals());
         assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
         assertFalse(java.nio.file.Files.exists(session));
     }
@@ -144,7 +144,7 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(Optional.empty());
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
         assertTrue(exchange.transportErrors.isEmpty());
-        assertTrue(events().isEmpty());
+        assertEquals(0, summary().possibleReveals());
         assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
         assertFalse(java.nio.file.Files.exists(session));
     }
@@ -155,7 +155,7 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(Optional.of(new QRScanDialog.Result(new IllegalArgumentException("camera unavailable"))));
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
         assertEquals(List.of("camera unavailable"), exchange.transportErrors);
-        assertTrue(events().isEmpty());
+        assertEquals(0, summary().possibleReveals());
         assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
         assertFalse(java.nio.file.Files.exists(session));
     }
@@ -166,7 +166,7 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(Optional.of(new QRScanDialog.Result((UR)null)));
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
         assertEquals(List.of("Scanner returned no anti-exfil UR"), exchange.transportErrors);
-        assertTrue(events().isEmpty());
+        assertEquals(0, summary().possibleReveals());
     }
 
     @Test
@@ -179,7 +179,7 @@ class AntiExfilQrRejectionTest {
         var result = execute(exchange);
         assertEquals(AntiExfilSigningFlow.Outcome.COMPLETE, result.outcome());
         assertArrayEquals(exchange.displayed.get(1), exchange.displayed.get(2));
-        assertEquals(List.of("PENDING_REVEAL", "VERIFIED_COMPLETE"), events().stream().map(AntiExfilAbortJournal.AbortEvent::getReason).toList());
+        assertEquals(1, summary().possibleReveals()); assertEquals(1, summary().completions()); assertEquals(0, summary().unfinishedAfterReveal());
         assertFalse(result.completion().isBroadcast());
     }
 
@@ -229,7 +229,7 @@ class AntiExfilQrRejectionTest {
         assertEquals(AntiExfilSigningFlow.Outcome.COMPLETE, result.outcome());
         assertEquals(1, result.completion().getVerifiedSignatures().size());
         assertFalse(result.completion().isBroadcast());
-        assertEquals(List.of("PENDING_REVEAL", "VERIFIED_COMPLETE"), events().stream().map(AntiExfilAbortJournal.AbortEvent::getReason).toList());
+        assertEquals(1, summary().possibleReveals()); assertEquals(1, summary().completions()); assertEquals(0, summary().unfinishedAfterReveal());
         assertThrows(AntiExfilException.class, () -> AntiExfilCoordinator.load(session, journal, signer));
         assertFalse(java.nio.file.Files.exists(session));
         assertEquals(result.completion().getVerifiedSignatures(), reload().getCompletedResult().getVerifiedSignatures());
@@ -238,16 +238,20 @@ class AntiExfilQrRejectionTest {
 
     private byte[] hex(String field) { return Utils.hexToBytes(vector.get(field).getAsString()); }
     private AntiExfilCoordinator reload() { return coordinator; }
-    private List<AntiExfilAbortJournal.AbortEvent> events() {
-        return new AntiExfilAbortJournal(journal, AntiExfilCoordinator.getSigningKeyHistoryIdentity(signer)).getEvents();
+    private AntiExfilCoordinator.RecoverySummary summary() {
+        Path directory = temporary.resolve("history-v3").resolve(Utils.bytesToHex(AntiExfilCoordinator.getSigningKeyHistoryIdentity(signer)));
+        try(var attempt = AntiExfilCoordinator.prepare(directory, journal, null, false, hex("original_psbt_hex"), signer, AntiExfilNetwork.TESTNET4)) {
+            return attempt.summary();
+        }
     }
     private void assertOneEvent(AntiExfilCoordinator.AbortReason reason) {
-        var events = events();
-        String expected = coordinator.getStatus().getPhase() == AntiExfilCoordinator.Phase.CLOSED
-                && events.size() == 1 ? "PRE_REVEAL_REJECTED" : reason.name();
-        assertEquals(expected, events.getLast().getReason());
-        assertArrayEquals(coordinator.getStatus().getSessionId(), events.getFirst().getSessionId());
-        assertArrayEquals(coordinator.getStatus().getPsbtDigest(), events.getFirst().getPsbtDigest());
+        var summary = summary();
+        if(summary.possibleReveals() == 0) {
+            assertEquals(1, summary.starts()); assertEquals(0, summary.unfinishedAfterReveal());
+        } else {
+            assertEquals(1, summary.unfinishedAfterReveal()); assertEquals(1L, summary.reasons().get(reason.name()));
+        }
+        assertEquals(0, summary.completions());
     }
     private byte[] wrongNetwork(byte[] message) { byte[] changed = message.clone(); changed[5] = (byte)AntiExfilNetwork.TESTNET3.getCode(); return changed; }
     private Optional<QRScanDialog.Result> scan(byte[] message) {

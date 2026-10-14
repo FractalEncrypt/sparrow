@@ -120,7 +120,7 @@ class ProtectedQrEntryPointGuiTest {
             }
             Keystore key=wallet(WalletModel.SEEDSIGNER,AntiExfilKeystorePolicy.OPTIONAL).getKeystores().getFirst();
             Path journal=Storage.getStateDir().toPath().resolve("anti-exfil/journals/ram-"+Utils.bytesToHex(com.sparrowwallet.drongo.antiexfil.AntiExfilCoordinator.getSigningKeyHistoryIdentity(key))+".aexj");
-            assertTrue(new com.sparrowwallet.drongo.antiexfil.AntiExfilAbortJournal(journal,com.sparrowwallet.drongo.antiexfil.AntiExfilCoordinator.getSigningKeyHistoryIdentity(key)).getEvents().isEmpty(),"An empty nonsecret journal is allowed; cancelling Step 1 must not record a reveal or block freshness");
+            assertFalse(Files.exists(journal), "V3 Step-1 cancellation must not create or rewrite V2 history");
         }finally{if(priorHome==null)System.clearProperty(homeProperty);else System.setProperty(homeProperty,priorHome);}
     }
     private void snapshot(Node node,String name) throws Exception {

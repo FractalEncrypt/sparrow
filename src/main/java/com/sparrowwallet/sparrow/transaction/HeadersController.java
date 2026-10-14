@@ -1280,7 +1280,7 @@ public class HeadersController extends TransactionFormController implements Init
             AntiExfilNetwork network = antiExfilNetwork();
 
             // Legacy sessions are never restored. Their mere presence for this account
-            // conservatively blocks a new challenge without reading secret-bearing contents.
+            // requires a recovery warning without reading secret-bearing contents.
             java.nio.file.Path legacyRoot = Storage.getStateDir().toPath().resolve("anti-exfil/sessions");
             boolean legacySessionPresent = false;
             if(java.nio.file.Files.exists(legacyRoot)) {
@@ -1297,8 +1297,16 @@ public class HeadersController extends TransactionFormController implements Init
                     }
                 }
             }
-            AntiExfilCoordinator.preserveLegacyHistory(journalPath, legacyJournalPath, legacySessionPresent, keystore);
-            try(AntiExfilCoordinator coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network)) {
+            java.nio.file.Path historyDirectory = Storage.getStateDir().toPath().resolve("anti-exfil/history-v3")
+                    .resolve(Utils.bytesToHex(AntiExfilCoordinator.getSigningKeyHistoryIdentity(keystore)));
+            try(AntiExfilCoordinator.PreparedAttempt attempt = AntiExfilCoordinator.prepare(historyDirectory,
+                    journalPath, legacyJournalPath, legacySessionPresent, original, keystore, network)) {
+            AntiExfilCoordinator.Approval approval = null;
+            if(attempt.summary().requiresConfirmation()) {
+                if(!AntiExfilQrExchange.confirmFreshStart(attempt.summary(), antiExfilButton.getScene().getWindow())) return;
+                approval = attempt.approve();
+            }
+            try(AntiExfilCoordinator coordinator = attempt.start(approval)) {
             AntiExfilSigningFlow.Result result = AntiExfilSigningFlow.execute(coordinator, network,
                     new AntiExfilQrExchange(antiExfilButton.getScene().getWindow(),
                             keystore.getWalletModel().toDisplayString()));
@@ -1308,6 +1316,7 @@ public class HeadersController extends TransactionFormController implements Init
                 EventManager.get().post(new ViewPSBTEvent(antiExfilButton.getScene().getWindow(), null, null,
                         signed, headersForm.getPsbt(), TransactionView.HEADERS, null,
                         result.completion().getVerifiedSignatures()));
+            }
             }
             }
         } catch(Exception exception) {

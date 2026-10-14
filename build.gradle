@@ -130,7 +130,7 @@ test {
         //Checkpoint verification needs the network and checks compiled in data rather than code, so it is a release checklist step
         excludeTags 'checkpoint'
     }
-    jvmArgs = ["--enable-native-access=ALL-UNNAMED"]
+    jvmArgs = ["--enable-native-access=ALL-UNNAMED", "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED", "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED", "--add-opens=java.base/java.io=ALL-UNNAMED"]
     systemProperty 'sparrow.home', layout.buildDirectory.dir('test-home').get().asFile.absolutePath
 }
 
@@ -142,7 +142,7 @@ tasks.register('verifyCheckpoint', Test) {
     useJUnitPlatform {
         includeTags 'checkpoint'
     }
-    jvmArgs = ["--enable-native-access=ALL-UNNAMED"]
+    jvmArgs = ["--enable-native-access=ALL-UNNAMED", "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED", "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED", "--add-opens=java.base/java.io=ALL-UNNAMED"]
     outputs.upToDateWhen { false }
     testLogging {
         showStandardStreams = true
@@ -156,6 +156,9 @@ application {
 
     applicationDefaultJvmArgs = ["-XX:+HeapDumpOnOutOfMemoryError",
                                  "--enable-native-access=com.sparrowwallet.drongo",
+                                 "--add-opens=java.base/sun.nio.ch=com.sparrowwallet.drongo",
+                                 "--add-opens=java.base/sun.nio.fs=com.sparrowwallet.drongo",
+                                 "--add-opens=java.base/java.io=com.sparrowwallet.drongo",
                                  "--enable-native-access=com.sun.jna",
                                  "--enable-native-access=javafx.graphics",
                                  "--enable-native-access=com.fazecast.jSerialComm",
@@ -235,7 +238,10 @@ jlink {
     launcher {
         name = 'sparrow'
         jvmArgs = ["--enable-native-access=com.sparrowwallet.drongo",
-                   "--enable-native-access=com.sun.jna",
+                   "--add-opens=java.base/sun.nio.ch=com.sparrowwallet.drongo",
+                                 "--add-opens=java.base/sun.nio.fs=com.sparrowwallet.drongo",
+                                 "--add-opens=java.base/java.io=com.sparrowwallet.drongo",
+                                 "--enable-native-access=com.sun.jna",
                    "--enable-native-access=javafx.graphics",
                    "--enable-native-access=com.sparrowwallet.merged.module",
                    "--enable-native-access=com.fazecast.jSerialComm",
