@@ -129,6 +129,7 @@ class AntiExfilAttributionRegressionTest {
     // ------------------------------------------------------------------ policy predicate
 
     // Independent Codex review: strongest policy must survive unsigned and valid-proof states too.
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void codexRequiredWalletWinsForUnsignedPsbt() throws Exception {
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
@@ -138,6 +139,7 @@ class AntiExfilAttributionRegressionTest {
         assertSame(required, HeadersController.selectPsbtPolicyWallet(List.of(optional, required), unsigned, Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void codexRequiredWalletWinsWithValidProof() throws Exception {
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
@@ -149,6 +151,7 @@ class AntiExfilAttributionRegressionTest {
         assertSame(required, HeadersController.selectPsbtPolicyWallet(List.of(optional, required), protectedReturn, proofA));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void unsignedWalletSelectionAndRefreshKeepRequiredAuthority() throws Exception {
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
@@ -169,6 +172,7 @@ class AntiExfilAttributionRegressionTest {
         fx(() -> { assertSame(optional, ((ComboBox<?>)f.node("signingWallet")).getValue()); return null; });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void replacementSettingsEventUpdatesTheBoundAuthorityByStorageIdentity() throws Exception {
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
         PSBT unsigned = new PSBT(Utils.hexToBytes(vector.get("original_psbt_hex").getAsString()), false);
@@ -192,6 +196,7 @@ class AntiExfilAttributionRegressionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void validProofWalletBindingSurvivesOptionalDuplicateRefresh() throws Exception {
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
@@ -217,6 +222,7 @@ class AntiExfilAttributionRegressionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void policySelectionKeepsRequiredEvenWhenProofIsInvalidAndHonorsStrongerDuplicate() throws Exception {
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
@@ -230,6 +236,7 @@ class AntiExfilAttributionRegressionTest {
         assertSame(bothRequired, HeadersController.selectPsbtPolicyWallet(List.of(optional, required, bothRequired), unsigned, Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void incomparableRequiredPoliciesFailClosedUntilSupersetWalletOpens() throws Exception {
         Wallet requiredA = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
         Wallet requiredB = multisig(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.REQUIRED);
@@ -252,6 +259,7 @@ class AntiExfilAttributionRegressionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void strippedPartialRequiredReturnIsNotPermitted() throws Exception {
         for(AntiExfilKeystorePolicy policyB : List.of(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.REQUIRED)) {
             Wallet wallet = multisig(AntiExfilKeystorePolicy.REQUIRED, policyB);
@@ -271,6 +279,7 @@ class AntiExfilAttributionRegressionTest {
         }
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void strippedFinalizedRequiredReturnIsNotPermitted() throws Exception {
         for(AntiExfilKeystorePolicy policyB : List.of(AntiExfilKeystorePolicy.OPTIONAL, AntiExfilKeystorePolicy.REQUIRED)) {
             Wallet wallet = multisig(AntiExfilKeystorePolicy.REQUIRED, policyB);
@@ -288,6 +297,7 @@ class AntiExfilAttributionRegressionTest {
         }
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void truncatedOrRelabelledRequiredDerivationIsNotTrusted() throws Exception {
         Wallet wallet = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
         String fingerprintA = wallet.getKeystores().getFirst().getKeyDerivation().getMasterFingerprint();
@@ -313,6 +323,7 @@ class AntiExfilAttributionRegressionTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, relabelled, Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void unattributableSignatureOnRequiredInputFailsClosed() throws Exception {
         Wallet wallet = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
         PSBT foreign = strip(new PSBT(signed, false));
@@ -328,6 +339,7 @@ class AntiExfilAttributionRegressionTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, foreign, Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void seedSignerTrimmedSingleSigReturnIsNotPermitted() throws Exception {
         SingleSig s = singleSig(AntiExfilKeystorePolicy.REQUIRED);
         PSBT received = new PSBT(s.trimmed(), false);
@@ -348,6 +360,7 @@ class AntiExfilAttributionRegressionTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(s.host(), imported, Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void strippedRequiredReturnWithMatchingProofIsAttributedThroughTheWallet() throws Exception {
         // Decision: a proof matches the exact signer identity, input, outpoint, key, digest and signature, so once the
         // wallet attributes the signer the return is as good as one that kept its derivations. The bound wallet is a
@@ -391,6 +404,7 @@ class AntiExfilAttributionRegressionTest {
 
     // ------------------------------------------------------------------ fresh import: real headers.fxml + HeadersController
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void freshImportOfStrippedRequiredReturnOpensReadOnly() throws Exception {
         Wallet wallet = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
         PSBT finalized = new PSBT(signed, false);
@@ -425,6 +439,7 @@ class AntiExfilAttributionRegressionTest {
         }
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void sameWindowFreshImportThroughAppControllerOpensQuarantinedTab() throws Exception {
         // File > Open Transaction in the window that holds the wallet: the real AppController.addTransactionTab
         // back-fills the UTXO and opens a tab with no admission check, so the tab's own gate must hold.
@@ -462,6 +477,7 @@ class AntiExfilAttributionRegressionTest {
 
     // ------------------------------------------------------------------ cross-window forward: AppController.viewPSBT
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void crossWindowForwardOfStrippedRequiredReturnIsRejected() throws Exception {
         Wallet wallet = multisig(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL);
         PSBT finalized = new PSBT(signed, false);

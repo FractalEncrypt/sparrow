@@ -169,13 +169,6 @@ public class KeystoreController extends WalletFormController implements Initiali
         antiExfilPolicy.setValue(keystore.getAntiExfilPolicy());
         antiExfilPolicy.valueProperty().addListener((observable, oldValue, policy) -> {
             if(policy == null) return;
-            if(policy == AntiExfilKeystorePolicy.REQUIRED && !supportsRequiredAntiExfil(keystore)) {
-                Platform.runLater(() -> antiExfilPolicy.setValue(oldValue));
-                AppServices.showWarningDialog("Protected signing unavailable",
-                        "Required protected signing is available only for device models with verified ceremony support.",
-                        ButtonType.OK);
-                return;
-            }
             keystore.setAntiExfilPolicy(policy);
             EventManager.get().post(new SettingsChangedEvent(walletForm.getWallet(), SettingsChangedEvent.Type.KEYSTORE_ANTI_EXFIL));
         });
@@ -416,14 +409,10 @@ public class KeystoreController extends WalletFormController implements Initiali
 
     private void configureAntiExfilPolicies() {
         if(antiExfilPolicy == null) return;
-        List<AntiExfilKeystorePolicy> policies = new ArrayList<>(List.of(AntiExfilKeystorePolicy.values()));
-        if(!supportsRequiredAntiExfil(keystore) && !keystore.isAntiExfilRequired()) {
-            policies.remove(AntiExfilKeystorePolicy.REQUIRED);
-        }
+        List<AntiExfilKeystorePolicy> policies = new ArrayList<>(List.of(AntiExfilKeystorePolicy.UNSUPPORTED, AntiExfilKeystorePolicy.OPTIONAL));
+        if(keystore.getAntiExfilPolicy() == AntiExfilKeystorePolicy.REQUIRED) policies.add(AntiExfilKeystorePolicy.REQUIRED);
         antiExfilPolicy.getItems().setAll(policies);
-        antiExfilPolicy.setTooltip(keystore.isAntiExfilRequired() && !supportsRequiredAntiExfil(keystore)
-                ? new Tooltip("Warning: this saved REQUIRED setting is incompatible with the selected device model. Lower the policy to restore ordinary signing.")
-                : null);
+        antiExfilPolicy.setTooltip(new Tooltip("Protected QR is optional. Legacy Required enforcement and restored verification badges are retired. Known capability/profile and historical files are preserved."));
     }
 
     static boolean supportsRequiredAntiExfil(Keystore keystore) {

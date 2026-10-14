@@ -130,6 +130,7 @@ class DeepseekRetainedStorageReviewTest {
         Network.set(previousNetwork);
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void retainedRequiredWalletKeepsItsStorage() throws Exception {
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED);
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL);
@@ -171,6 +172,7 @@ class DeepseekRetainedStorageReviewTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void retainedStorageRestoresCompletedProofAndCreatesProtectedSession() throws Exception {
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED);
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL);
@@ -206,6 +208,7 @@ class DeepseekRetainedStorageReviewTest {
         assertEquals(AntiExfilStage.HOST_COMMIT, AntiExfilCodec.decode(next.getHostCommitMessage()).getStage());
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void closingAllQuarantinesAndDeliberateOptionalEditClearsRetainedStorage() throws Exception {
         Wallet required = multisig(AntiExfilKeystorePolicy.REQUIRED);
         Wallet optional = multisig(AntiExfilKeystorePolicy.OPTIONAL);

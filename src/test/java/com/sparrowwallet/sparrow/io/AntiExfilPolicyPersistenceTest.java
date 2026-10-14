@@ -25,7 +25,7 @@ class AntiExfilPolicyPersistenceTest {
         assertFalse(json.contains("antiExfilRequired"));
 
         Keystore restored = gson.fromJson(json, Keystore.class);
-        assertTrue(restored.isAntiExfilRequired());
+        assertFalse(restored.isAntiExfilRequired());
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, restored.getAntiExfilPolicy());
         assertEquals(WalletModel.SEEDSIGNER, restored.getWalletModel());
         assertEquals(AntiExfilProfile.AEXT_V1, restored.getAntiExfilProfile());

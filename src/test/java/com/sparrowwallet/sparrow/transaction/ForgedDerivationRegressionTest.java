@@ -20,6 +20,7 @@ public class ForgedDerivationRegressionTest {
     @BeforeAll static void start() throws Exception { OctSixReviewTest.startFx(); }
     @AfterAll static void stop() { OctSixReviewTest.restoreGlobalState(); }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanSingleSigWithForgedRequiredDerivationIsRejected() throws Exception {
         SingleSig ss = singleSig();
         fx(() -> {
@@ -31,6 +32,7 @@ public class ForgedDerivationRegressionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanWithForgedRequiredDerivationIsRejected() throws Exception {
         Fixture f = fixture("OR");
         PSBT aReturn = ordinarySign(copy(f.psbt()), f, 0);
@@ -47,6 +49,7 @@ public class ForgedDerivationRegressionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanWithAllRequiredDerivationsForgedIsRejected() throws Exception {
         Fixture f = fixture("RR");
         PSBT forged = ordinarySign(ordinarySign(copy(f.psbt()), f, 0), f, 1);
@@ -61,6 +64,7 @@ public class ForgedDerivationRegressionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void policyRejectsForgedRequiredDerivationBeforeAndAfterFinalize() throws Exception {
         Fixture f = fixture("OR");
         PSBT forged = ordinarySign(ordinarySign(copy(f.psbt()), f, 0), f, 1);
@@ -72,6 +76,7 @@ public class ForgedDerivationRegressionTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(f.wallet(), forged, Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void policyRejectsPartiallyStrippedRequiredDerivation() throws Exception {
         Fixture f = fixture("OR");
         PSBT partial = ordinarySign(ordinarySign(copy(f.psbt()), f, 0), f, 1);

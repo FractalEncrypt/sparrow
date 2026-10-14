@@ -35,32 +35,17 @@ public final class AntiExfilPolicy {
     }
 
     public static boolean requiresProtectedSigning(Wallet wallet) {
-        return wallet != null && wallet.getKeystores().stream().anyMatch(Keystore::isAntiExfilRequired);
+        return false; // No global Required/provenance enforcement in the RAM-only design.
     }
 
     public static ProvenanceStatus evaluatePsbtEgress(TransactionData transactionData) {
-        if(transactionData == null || transactionData.getPsbt() == null) {
-            return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
-        }
-        PSBT psbt = transactionData.getPsbt();
-        ProvenanceStatus finalizedStatus = validateFinalizedSignatures(psbt);
-        if(finalizedStatus != ProvenanceStatus.PERMITTED) return finalizedStatus;
-        Wallet wallet = transactionData.getSigningWallet();
-        if(wallet == null) {
-            return psbt.hasSignatures() ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
-        }
-        if(transactionData.hasVerifiedProtectedContext() && psbt.hasSignatures()
-                && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
-            return ProvenanceStatus.INVALID_PROVENANCE;
-        }
-        if(!requiresProtectedSigning(wallet) && transactionData.getVerifiedAntiExfilSignatures().isEmpty()) {
-            return ProvenanceStatus.PERMITTED;
-        }
-        return evaluateSignatureProvenance(wallet, psbt, transactionData.getVerifiedAntiExfilSignatures());
+        if(transactionData == null || transactionData.getPsbt() == null) return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+        return validateFinalizedSignatures(transactionData.getPsbt());
     }
 
     private static ProvenanceStatus validateFinalizedSignatures(PSBT psbt) {
         try {
+            psbt.verifySignatures();
             return psbt.verifyKnownFinalizedSignatures()
                     ? ProvenanceStatus.PERMITTED : ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
         } catch(Exception exception) {
@@ -83,65 +68,9 @@ public final class AntiExfilPolicy {
     public static ProvenanceStatus evaluateSignatureProvenance(Wallet wallet, PSBT psbt,
                                                                 Set<VerifiedAntiExfilSignature> proofs) {
         if(psbt == null) return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
-        ProvenanceStatus finalizedStatus = validateFinalizedSignatures(psbt);
-        if(finalizedStatus != ProvenanceStatus.PERMITTED) return finalizedStatus;
-        if(psbt.isFinalized()) {
-            try {
-                return evaluateSignatureProvenance(wallet, psbt, psbt.extractTransaction(), proofs);
-            } catch(Exception exception) {
-                return ProvenanceStatus.INVALID_PROVENANCE;
-            }
-        }
-        Set<VerifiedAntiExfilSignature> availableProofs = proofs == null ? Collections.emptySet() : Set.copyOf(proofs);
-        if(wallet == null) {
-            return psbt.hasSignatures() ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
-        }
-
-        Set<VerifiedAntiExfilSignature> matchedProofs = new HashSet<>();
-        try {
-            psbt = withWalletDerivations(wallet, psbt, availableProofs);
-            for(int inputIndex = 0; inputIndex < psbt.getPsbtInputs().size(); inputIndex++) {
-                PSBTInput input = psbt.getPsbtInputs().get(inputIndex);
-                for(Map.Entry<ECKey, TransactionSignature> signatureEntry : input.getPartialSignatures().entrySet()) {
-                    Keystore signer = attributeSigner(wallet, input, signatureEntry.getKey());
-                    if(signer == null) {
-                        if(hasRequiredParticipant(wallet, input)) {
-                            return ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE;
-                        }
-                        continue;
-                    }
-                    VerifiedAntiExfilSignature matching = findMatchingProof(availableProofs, signer, input,
-                            inputIndex, signatureEntry.getKey(), signatureEntry.getValue());
-                    if(matching != null) matchedProofs.add(matching);
-                    if(signer.isAntiExfilRequired() && matching == null) {
-                        return ProvenanceStatus.REQUIRED_PROOF_MISSING;
-                    }
-                }
-                //A partially finalized PSBT can carry some inputs' signatures only in final_scriptwitness or
-                //final_scriptSig; isFinalized() is false, so the partial-signature map above would miss them.
-                for(TransactionSignature signature : getFinalInputSignatures(input)) {
-                    AttributedFinalSignature attributed = attributeFinalSignature(wallet, input, signature);
-                    if(attributed == null) {
-                        if(hasRequiredParticipant(wallet, input)) {
-                            return ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE;
-                        }
-                        continue;
-                    }
-                    VerifiedAntiExfilSignature matching = findMatchingProof(availableProofs,
-                            attributed.signer(), input, inputIndex, attributed.publicKey(), signature);
-                    if(matching != null) matchedProofs.add(matching);
-                    if(attributed.signer().isAntiExfilRequired() && matching == null) {
-                        return ProvenanceStatus.REQUIRED_PROOF_MISSING;
-                    }
-                }
-            }
-        } catch(RuntimeException exception) {
-            return ProvenanceStatus.INVALID_PROVENANCE;
-        }
-
-        return matchedProofs.containsAll(availableProofs)
-                ? ProvenanceStatus.PERMITTED
-                : ProvenanceStatus.INVALID_PROVENANCE;
+        // The active coordinator verifies the AE transcript before producing a result.
+        // Import/egress uses ordinary Bitcoin validation; transient badges never authorize it.
+        return validateFinalizedSignatures(psbt);
     }
 
     public static Set<VerifiedAntiExfilSignature> retainMatchingProofs(Wallet wallet, PSBT psbt,
@@ -178,72 +107,13 @@ public final class AntiExfilPolicy {
     public static ProvenanceStatus evaluateSignatureProvenance(Wallet wallet, PSBT contextPsbt,
                                                                 Transaction transaction,
                                                                 Set<VerifiedAntiExfilSignature> proofs) {
-        if(wallet == null || contextPsbt == null || transaction == null) {
-            return hasSignatures(transaction) ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
-        }
-        Set<VerifiedAntiExfilSignature> availableProofs = proofs == null ? Collections.emptySet() : Set.copyOf(proofs);
-        Set<VerifiedAntiExfilSignature> matchedProofs = new HashSet<>();
-        boolean attributedAny = false;
-        try {
-            contextPsbt = withWalletDerivations(wallet, contextPsbt, availableProofs);
-            if(transaction.getInputs().size() != contextPsbt.getPsbtInputs().size()) {
-                return ProvenanceStatus.INVALID_PROVENANCE;
-            }
-            for(int inputIndex = 0; inputIndex < contextPsbt.getPsbtInputs().size(); inputIndex++) {
-                PSBTInput contextInput = contextPsbt.getPsbtInputs().get(inputIndex);
-                for(TransactionSignature signature : getFinalSignatures(transaction.getInputs().get(inputIndex))) {
-                    AttributedFinalSignature attributed = attributeFinalSignature(wallet, contextInput, signature);
-                    if(attributed == null) {
-                        if(hasRequiredParticipant(wallet, contextInput)) {
-                            return ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE;
-                        }
-                        continue;
-                    }
-                    attributedAny = true;
-                    VerifiedAntiExfilSignature matching = findMatchingProof(availableProofs,
-                            attributed.signer(), contextInput, inputIndex, attributed.publicKey(), signature);
-                    if(matching != null) matchedProofs.add(matching);
-                    if(attributed.signer().isAntiExfilRequired() && matching == null) {
-                        return ProvenanceStatus.REQUIRED_PROOF_MISSING;
-                    }
-                }
-            }
-            if(hasSignatures(transaction) && !attributedAny
-                    && contextPsbt.getPsbtInputs().stream().anyMatch(input -> hasRequiredParticipant(wallet, input))) {
-                return ProvenanceStatus.REQUIRED_RETURN_UNATTRIBUTABLE;
-            }
-        } catch(RuntimeException exception) {
-            return ProvenanceStatus.INVALID_PROVENANCE;
-        }
-        return matchedProofs.containsAll(availableProofs)
-                ? ProvenanceStatus.PERMITTED
-                : ProvenanceStatus.INVALID_PROVENANCE;
+        if(contextPsbt == null || transaction == null) return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
+        // Context and transaction mutation checks remain in the ordinary handlers.
+        return validateFinalizedSignatures(contextPsbt);
     }
 
     public static ProvenanceStatus evaluateRawTransactionProvenance(Wallet wallet, Transaction transaction) {
-        try {
-            int signatureCount = countFinalSignatures(transaction);
-            if(signatureCount == 0) {
-                return hasSignatures(transaction)
-                        ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE
-                        : ProvenanceStatus.PERMITTED;
-            }
-            if(wallet == null) return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
-
-            Map<TransactionInput, Map<TransactionSignature, Keystore>> attributed =
-                    wallet.getSignedKeystores(transaction);
-            List<Keystore> signers = attributed.values().stream()
-                    .flatMap(signatures -> signatures.values().stream())
-                    .toList();
-            if(signers.size() != signatureCount) {
-                return ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE;
-            }
-            return signers.stream().anyMatch(Keystore::isAntiExfilRequired)
-                    ? ProvenanceStatus.REQUIRED_PROOF_MISSING
-                    : ProvenanceStatus.PERMITTED;
-        } catch(RuntimeException exception) {
-            return ProvenanceStatus.INVALID_PROVENANCE;
-        }
+        return transaction == null ? ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE : ProvenanceStatus.PERMITTED;
     }
 
     private static AttributedFinalSignature attributeFinalSignature(Wallet wallet, PSBTInput input,

@@ -83,6 +83,7 @@ class AntiExfilRawTransactionExportRegressionTest {
         assertTrue(eventErrors.isEmpty(), eventErrors.toString());
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void fileMenuSaveTransactionRefusesQuarantinedRawTransaction() throws Exception {
         for(TransactionData data : quarantinedRawTabs()) {
             String status = HeadersController.evaluateTransactionProvenance(data).toString();
@@ -95,6 +96,7 @@ class AntiExfilRawTransactionExportRegressionTest {
         }
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void fileMenuShowTransactionRefusesQuarantinedRawTransaction() throws Exception {
         for(TransactionData data : quarantinedRawTabs()) {
             String status = HeadersController.evaluateTransactionProvenance(data).toString();

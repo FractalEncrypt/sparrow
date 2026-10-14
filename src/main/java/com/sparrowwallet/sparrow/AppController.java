@@ -2282,8 +2282,8 @@ public class AppController implements Initializable {
                 AntiExfilPolicy.ProvenanceStatus status = AntiExfilPolicy.evaluateSignatureProvenance(
                         signingWallet, prospective, candidateProofs);
                 if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
-                    AppServices.showErrorDialog("Protected signature rejected",
-                            "The signed PSBT cannot be combined because protected-signing provenance failed (" + status + ").");
+                        AppServices.showErrorDialog("Invalid PSBT",
+                                "The signed PSBT cannot be combined because ordinary signature/context validation failed (" + status + ").");
                     tabs.getSelectionModel().select(tab);
                     return;
                 }
@@ -3482,8 +3482,8 @@ public class AppController implements Initializable {
             AntiExfilPolicy.ProvenanceStatus status = AntiExfilPolicy.evaluateSignatureProvenance(
                     signingWallet.get(), psbt, verifiedAntiExfilSignatures);
             if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
-                AppServices.showErrorDialog("Protected signature rejected",
-                        "A signature requiring protected signing has no matching verified ceremony proof (" + status + ").");
+                AppServices.showErrorDialog("Invalid PSBT",
+                        "The returned PSBT failed ordinary signature/context validation (" + status + ").");
                 return true;
             }
             return false;

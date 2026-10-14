@@ -53,6 +53,7 @@ class AntiExfilPartialFinalizationRegressionTest {
         Network.set(previousNetwork);
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void partiallyFinalizedRequiredInputIsNotPermitted() throws Exception {
         Keystore secret = Keystore.fromSeed(new DeterministicSeed(MNEMONIC, "", 0, DeterministicSeed.Type.BIP39),
                 PolicyType.SINGLE_HD, KeyDerivation.parsePath("m/84'/1'/0'"));

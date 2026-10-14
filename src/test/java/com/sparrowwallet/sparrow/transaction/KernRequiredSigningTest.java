@@ -56,6 +56,7 @@ class KernRequiredSigningTest {
         journal = temporary.resolve("journal.aexj");
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void reviewedKernIsSelectableAndProfileMismatchCannotDowngradeRequiredPolicy() {
         assertTrue(AntiExfilDeviceRegistry.supportsRequired(kern));
@@ -69,6 +70,7 @@ class KernRequiredSigningTest {
         }
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void validProtectedCompletionAndReloadProvideRequiredProof() throws Exception {
         AntiExfilCoordinator coordinator = coordinator();
@@ -88,6 +90,7 @@ class KernRequiredSigningTest {
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, kern.getAntiExfilPolicy());
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void ordinaryReturnedPsbtAndMissingOrCorruptReceiptFailClosed() throws Exception {
         PSBT ordinaryReturn = new PSBT(hex("signed_psbt_hex"), false);
@@ -122,6 +125,7 @@ class KernRequiredSigningTest {
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, kern.getAntiExfilPolicy());
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void abortAndInvalidSignatureDoNotLowerKernPolicyOrPermitOrdinaryReturn() throws Exception {
         AntiExfilCoordinator coordinator = coordinator();
@@ -138,6 +142,7 @@ class KernRequiredSigningTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, new PSBT(hex("signed_psbt_hex"), false), Set.of()));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void requiredKernBlocksSoftwareFallbackWhileOptionalStillWorks() throws Exception {
         // Private material comes only from the repository's public software test vector.

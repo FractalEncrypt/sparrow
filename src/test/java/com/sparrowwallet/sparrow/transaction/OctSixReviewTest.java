@@ -88,6 +88,7 @@ public class OctSixReviewTest {
     // ---------------------------------------------------------------------------------------------
 
     /** 2-of-2, A Optional and B Required. A signs ordinarily, then B returns an ordinary (unproven) signature. */
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanRequiredOrdinarySignatureControlIsRejected() throws Exception {
         Fixture f = fixture("OR");
         PSBT aReturn = ordinarySign(copy(f.psbt), f, 0);
@@ -104,6 +105,7 @@ public class OctSixReviewTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanForgedRequiredDerivationIsRejected() throws Exception {
         Fixture f = fixture("OR");
         PSBT aReturn = ordinarySign(copy(f.psbt), f, 0);
@@ -124,6 +126,7 @@ public class OctSixReviewTest {
     }
 
     /** 2-of-2 RR, no protected ceremony at all: both signatures ordinary, both derivations forged. */
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanForgedDerivationsCannotBypassRequiredRequired() throws Exception {
         Fixture f = fixture("RR");
         PSBT control = ordinarySign(ordinarySign(copy(f.psbt), f, 0), f, 1);
@@ -196,6 +199,7 @@ public class OctSixReviewTest {
     }
 
     /** Single-sig Required (the tester release's first qualified configuration): one forged derivation suffices. */
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void inTabScanSingleSigRequiredForgedDerivationIsRejected() throws Exception {
         SingleSig ss = singleSig();
         ss.forged().verifySignatures();
@@ -212,6 +216,7 @@ public class OctSixReviewTest {
     }
 
     /** A valid retained proof for A cannot admit an unprotected Required signature from B. */
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void forgedDerivationCannotHideBehindAnotherRequiredCosignersRetainedProof() throws Exception {
         Fixture f = fixture("RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
@@ -239,6 +244,7 @@ public class OctSixReviewTest {
     // F1b: the addendum's alternative A1 fix ("evaluate a copy after addKeyPathInformation") only
     //      back-fills inputs whose derivation map is entirely empty.
     // ---------------------------------------------------------------------------------------------
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void authoritativeAttributionRejectsFullPartialStripAndForgery() throws Exception {
         Fixture f = fixture("OR");
         PSBT signed = ordinarySign(ordinarySign(copy(f.psbt), f, 0), f, 1);
@@ -381,7 +387,9 @@ public class OctSixReviewTest {
         @Override void protectedCompletionError(String message) { errors.add(message); }
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void guiInTabScanForgedRequiredDerivation() throws Exception { gui(true); }
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void guiInTabScanRequiredControl() throws Exception { gui(false); }
 
     private void gui(boolean forge) throws Exception {

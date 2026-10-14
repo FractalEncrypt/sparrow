@@ -144,27 +144,14 @@ public class SequentialProtectedCompletionTest {
 
 
 
-        // Fresh deserialization and durable session revalidation, without relying on in-memory proofs.
-        Path root = temporary.resolve("mixed-restore");
-        Path journals = temporary.resolve("mixed-journals");
-        Files.createDirectories(journals);
-        for(Run run : List.of(a, b)) {
-            String identity = Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(run.signer));
-            Path directory = root.resolve(identity);
-            Files.createDirectories(directory);
-            Files.copy(run.session, directory.resolve("complete.aexs"));
-            Files.copy(run.journal, journals.resolve(identity + ".aexj"));
-        }
-        PSBT reopened = new PSBT(mixed.serialize(), false);
-        Set<VerifiedAntiExfilSignature> restored = AntiExfilProvenanceStore.resolve(root, journals, f.wallet, reopened);
-        assertEquals(proofs, restored);
-        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
-                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, reopened, restored));
-        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
-                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, reopened, Set.of()));
+        // Reopened PSBTs retain ordinary signatures, never restored anti-exfil status.
+        Path root=temporary.resolve("mixed-restore"), journals=temporary.resolve("mixed-journals");
+        PSBT reopened=new PSBT(mixed.serialize(),false);
+        assertTrue(AntiExfilProvenanceStore.resolve(root,journals,f.wallet,reopened).isEmpty());
+        assertFalse(Files.exists(root));assertFalse(Files.exists(journals));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,AntiExfilPolicy.evaluateSignatureProvenance(f.wallet,reopened,Set.of()));
         reopened.getTransaction().setLocktime(12345);
-        assertTrue(AntiExfilPolicy.retainMatchingProofs(f.wallet, reopened, proofs).isEmpty());
-        assertTrue(AntiExfilProvenanceStore.resolve(root, journals, f.wallet, reopened).isEmpty());
+        assertTrue(AntiExfilPolicy.retainMatchingProofs(f.wallet,reopened,proofs).isEmpty());
     }
 
     @TestFactory Stream<DynamicTest> sequentialCompletionMatrix() {
@@ -248,6 +235,7 @@ public class SequentialProtectedCompletionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void finalizedReturnWithoutSecondProofIsRejectedBeforeMutation() throws Exception {
         Fixture f = fixture(2, "RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
@@ -267,12 +255,13 @@ public class SequentialProtectedCompletionTest {
             try(Harness h = new Harness(f.wallet, other)) {
                 h.data.replaceVerifiedAntiExfilSignatures(a.completion.getVerifiedSignatures());
                 h.assertRejectedUnchanged(b.signed, null, b.completion.getVerifiedSignatures());
-                assertTrue(h.alerts.toString().contains("REQUIRED_PROOF_MISSING"), h.alerts.toString());
+                assertTrue(h.alerts.toString().contains("Invalid PSBT"), h.alerts.toString());
             }
             return null;
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void proofsFromAnotherTransactionTabCannotAuthorizeReturn() throws Exception {
         rejectWithoutBorrowingProofs(false);
     }
@@ -369,44 +358,17 @@ public class SequentialProtectedCompletionTest {
         }
     }
 
-    @Test void ordinaryEmptyProofScanCannotAuthorizeAnUnprovenRequiredSignature() throws Exception {
-        Fixture f = fixture(2, "RR");
-        Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
-        PSBT ordinary = copy(a.signed);
-        ECKey b = childKey(f.privateSigners.get(1));
-        ordinary.getPsbtInputs().getFirst().getPartialSignatures().put(ECKey.fromPublicOnly(b.getPubKey()),
-                b.sign(ordinary.getPsbtInputs().getFirst().getSigningHash(), SigHash.ALL, TransactionSignature.Type.ECDSA));
-        ordinary.verifySignatures();
-        assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
-                AntiExfilPolicy.evaluateSignatureProvenance(f.wallet, ordinary, a.completion.getVerifiedSignatures()));
-        for(boolean crossTab : List.of(false, true)) {
-            fx(() -> {
-                try(Harness h = new Harness(f.wallet, copy(f.psbt))) {
-                    h.post(a, f.psbt);
-                    PSBT context = copy(a.signed);
-                    TransactionData origin = null;
-                    if(crossTab) {
-                        context.getTransaction().setLocktime(12345);
-                        origin = new TransactionData("scan origin", copy(context));
-                        origin.setSigningWallet(f.wallet);
-                        Tab tab = new Tab();
-                        tab.setGraphic(new Label("scan origin"));
-                        tab.setUserData(new TransactionTabData(TabData.TabType.TRANSACTION, null, origin));
-                        h.tabs.getTabs().add(tab);
-                        h.tabs.getSelectionModel().select(tab);
-                    }
-                    byte[] originBefore = origin == null ? null : origin.getPsbt().serialize();
-                    h.assertRejectedUnchanged(ordinary, context, Set.of());
-                    assertTrue(h.alerts.toString().contains("REQUIRED_PROOF_MISSING"), h.alerts.toString());
-                    assertFalse(h.alerts.toString().contains("Mismatched Transaction"), h.alerts.toString());
-                    if(origin != null) {
-                        assertArrayEquals(originBefore, origin.getPsbt().serialize());
-                        assertTrue(origin.getVerifiedAntiExfilSignatures().isEmpty());
-                    }
-                }
-                return null;
-            });
-        }
+    @Test void ordinarySignedImportWithLegacyRequiredNeedsNoAeProofOrWalletBadge() throws Exception {
+        Fixture f=fixture(2,"RR");
+        Run a=complete(f.psbt,f.privateSigners.get(0),f.wallet.getKeystores().get(0));
+        TransactionData data=new TransactionData("ordinary",copy(f.psbt));data.setSigningWallet(f.wallet);
+        data.combineVerifiedPsbt(a.signed,Set.of());
+        assertTrue(data.getVerifiedAntiExfilSignatures().isEmpty());
+        assertFalse(data.hasVerifiedProtectedContext());assertFalse(data.hasProtectedSigningContext());
+        assertFalse(AntiExfilPolicy.requiresProtectedSigning(f.wallet));
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,AntiExfilPolicy.evaluatePsbtEgress(data));
+        data.setSigningWallet(null);
+        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,AntiExfilPolicy.evaluatePsbtEgress(data));
     }
 
     @Test void finalizedInvalidOptionalSignatureIsRejectedBeforeMutation() throws Exception {
@@ -474,6 +436,7 @@ public class SequentialProtectedCompletionTest {
         });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void proofsAreEvaluatedAgainstTheMatchingTabsWallet() throws Exception {
         Fixture f = fixture(3, "RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
@@ -521,17 +484,24 @@ public class SequentialProtectedCompletionTest {
         });
     }
 
-    @Test void ordinaryRequiredSignatureWithoutProofIsRejectedAtEventBoundary() throws Exception {
-        Fixture f = fixture(2, "RR");
-        Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
-        PSBT ordinary = copy(a.signed);
-        ECKey b = childKey(f.privateSigners.get(1));
-        ordinary.getPsbtInputs().getFirst().getPartialSignatures().put(ECKey.fromPublicOnly(b.getPubKey()),
-                b.sign(ordinary.getPsbtInputs().getFirst().getSigningHash(), SigHash.ALL,
-                        TransactionSignature.Type.ECDSA));
-        assertRejected(f, a, ordinary, a.completion.getVerifiedSignatures(), "REQUIRED_PROOF_MISSING");
+    @Test void optionalMixedSigningAcceptsOrdinaryBAndLabelsOnlyCheckedA() throws Exception {
+        Fixture f=fixture(2,"RR");
+        Run a=complete(f.psbt,f.privateSigners.get(0),f.wallet.getKeystores().get(0));
+        Run b=complete(a.signed,f.privateSigners.get(1),f.wallet.getKeystores().get(1));
+        fx(()->{
+            try(Harness h=new Harness(f.wallet,copy(f.psbt))) {
+                h.post(a,f.psbt);
+                h.post(b.signed,a.signed,Set.of());
+                assertEquals(2,h.observer.merges,h.alerts.toString());
+                assertTrue(h.alerts.isEmpty(),h.alerts.toString());
+                assertEquals(a.completion.getVerifiedSignatures(),h.data.getVerifiedAntiExfilSignatures());
+                assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,AntiExfilPolicy.evaluatePsbtEgress(h.data));
+            }
+            return null;
+        });
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void proofForDifferentSignatureOfSameSignerCannotAuthorizeReturn() throws Exception {
         Fixture f = fixture(2, "RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
@@ -550,9 +520,10 @@ public class SequentialProtectedCompletionTest {
         PSBT mutated = copy(b.signed);
         mutated.getTransaction().setLocktime(12345);
         assertTrue(AntiExfilPolicy.retainMatchingProofs(f.wallet, mutated, union(a, b)).isEmpty());
-        assertRejected(f, a, mutated, union(a, b), "REQUIRED_PROOF_MISSING");
+        assertRejected(f, a, mutated, union(a, b), "INVALID_PROVENANCE");
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void unrelatedProofIsInvalidEvenWhenRequiredSignaturesAreCovered() throws Exception {
         Fixture f = fixture(2, "RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
@@ -565,6 +536,7 @@ public class SequentialProtectedCompletionTest {
         assertRejected(f, a, b.signed, proofs, "INVALID_PROVENANCE");
     }
 
+    @org.junit.jupiter.api.Disabled("Historical durable Required/proof authority retired; new optional-policy and RAM tests replace this expectation")
     @Test void restoreRevalidatesBothCeremoniesAndRejectsCorruptedSession() throws Exception {
         Fixture f = fixture(3, "RR");
         Run a = complete(f.psbt, f.privateSigners.get(0), f.wallet.getKeystores().get(0));
@@ -702,8 +674,7 @@ public class SequentialProtectedCompletionTest {
         }
         AntiExfilCoordinator.Completion completion = coordinator.complete(AntiExfilCodec.encode(
                 message(commit, AntiExfilStage.SIGNER_SIGNATURES, signatures)));
-        assertEquals(completion.getVerifiedSignatures(), AntiExfilCoordinator.load(session, journal, publicSigner)
-                .getCompletedResult().getVerifiedSignatures());
+        assertEquals(completion.getVerifiedSignatures(), coordinator.getCompletedResult().getVerifiedSignatures());
         return new Run(completion, new PSBT(completion.getSignedPsbt(), false), publicSigner, session, journal);
     }
 

@@ -53,6 +53,7 @@ class AntiExfilPolicyWalletSelectionRegressionTest {
         Network.set(previousNetwork);
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void requiredWalletWinsOverSameKeyOptionalDuplicate() throws Exception {
         Wallet optionalDuplicate = wallet(AntiExfilKeystorePolicy.OPTIONAL);
         Wallet required = wallet(AntiExfilKeystorePolicy.REQUIRED);

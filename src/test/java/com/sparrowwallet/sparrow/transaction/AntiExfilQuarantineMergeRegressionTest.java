@@ -107,6 +107,7 @@ class AntiExfilQuarantineMergeRegressionTest {
         assertEquals(0, connects.get(), "no connection may be requested");
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void mergingUnsignedOriginalKeepsNoContextQuarantine() throws Exception {
         Fixture f = signedTabWithoutWallet();
         fx(() -> {
@@ -144,6 +145,7 @@ class AntiExfilQuarantineMergeRegressionTest {
     }
 
     /** Guard (passes before and after the fix): once a policy wallet is opened it decides, as for any signed import. */
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void openingAPolicyWalletAfterTheMergeDecides() throws Exception {
         for(AntiExfilKeystorePolicy policyA : List.of(AntiExfilKeystorePolicy.REQUIRED, AntiExfilKeystorePolicy.OPTIONAL)) {
             Fixture f = signedTabWithoutWallet();

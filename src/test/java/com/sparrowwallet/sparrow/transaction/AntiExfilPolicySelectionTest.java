@@ -63,6 +63,7 @@ class AntiExfilPolicySelectionTest {
                 HeadersController.getAntiExfilKeystores(wallet));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void returnedRequiredSignatureNeedsProtectedProvenance() {
         Keystore required = compatible("Required", WalletModel.SPECTER_DIY, AntiExfilKeystorePolicy.REQUIRED);
@@ -77,6 +78,7 @@ class AntiExfilPolicySelectionTest {
         assertFalse(AntiExfilPolicy.requiresProtectedSigning(wallet));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void unattributableSignedReturnFailsClosedForExpectedRequiredSigner() {
         Keystore required = compatible("Required", WalletModel.SEEDSIGNER, AntiExfilKeystorePolicy.REQUIRED);
@@ -106,6 +108,7 @@ class AntiExfilPolicySelectionTest {
         assertArrayEquals(canonicalV0, exported);
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void mixedRequiredMultisigRejectsOrdinarySignatureNotCoveredByProof(@TempDir Path temporary) throws Exception {
         JsonObject vector = mixedVector();
@@ -162,6 +165,7 @@ class AntiExfilPolicySelectionTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, null, signed.extractTransaction(), Set.of(proofA)));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void signedPsbtEgressRequiresCompleteProtectedProvenance(@TempDir Path temporary) throws Exception {
         JsonObject vector = mixedVector();
@@ -199,6 +203,7 @@ class AntiExfilPolicySelectionTest {
                 AntiExfilPolicy.evaluatePsbtEgress(signedTab));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void reloadsOnlyRevalidatedMatchingProofsAndIgnoresUntrustedIndex(@TempDir Path temporary) throws Exception {
         JsonObject vector = mixedVector();
@@ -249,6 +254,7 @@ class AntiExfilPolicySelectionTest {
         assertTrue(AntiExfilProvenanceStore.resolve(walletRoot, journals, wallet, signed).isEmpty());
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void rawTransactionQuarantineRequiresPositiveCompleteOptionalAttribution() throws Exception {
         Transaction transaction = finalizedMixedTransaction();
@@ -289,6 +295,7 @@ class AntiExfilPolicySelectionTest {
                 HeadersController.getRawTransactionProvenance(tab));
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test
     void internalSweepExemptionIsLocalEphemeralAndDigestBound() throws Exception {
         Transaction transaction = finalizedMixedTransaction();

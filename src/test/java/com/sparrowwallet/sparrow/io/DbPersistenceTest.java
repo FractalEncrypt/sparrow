@@ -237,7 +237,7 @@ public class DbPersistenceTest {
         storage.closeAndWait();
 
         Wallet restored = new Storage(PersistenceType.DB, storage.getWalletFile()).loadUnencryptedWallet().getWallet();
-        Assertions.assertTrue(restored.getKeystores().getFirst().isAntiExfilRequired());
+        Assertions.assertFalse(restored.getKeystores().getFirst().isAntiExfilRequired());
         Assertions.assertEquals(AntiExfilKeystorePolicy.REQUIRED, restored.getKeystores().getFirst().getAntiExfilPolicy());
         Assertions.assertEquals(WalletModel.SPECTER_DIY, restored.getKeystores().getFirst().getWalletModel());
         Assertions.assertEquals(AntiExfilProfile.AEXT_V1, restored.getKeystores().getFirst().getAntiExfilProfile());

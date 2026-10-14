@@ -85,10 +85,7 @@ public final class AntiExfilQrExchange implements AntiExfilSigningFlow.Exchange 
     }
 
     private static void recordEvidence(String direction, AntiExfilTransportPackage transportPackage) {
-        byte[] canonical = transportPackage.encode();
-        log.info("Anti-exfil package direction={} stage={} bytes={} sha256={}", direction,
-                transportPackage.getMessage().getStage(), canonical.length,
-                Utils.bytesToHex(Sha256Hash.hash(canonical)));
+        // No transcript, encoded payload, randomness, or payload fingerprint is logged.
     }
 
     @Override
@@ -98,7 +95,7 @@ public final class AntiExfilQrExchange implements AntiExfilSigningFlow.Exchange 
         Optional<ButtonType> result = AppServices.showWarningDialog(
                 "Protected signing is incomplete",
                 "The host reveal has already been shown. Retry only this exact transaction and session. "
-                        + "Starting fresh challenges after repeated signer failures can create a selective-abort channel.",
+                        + "The exact retry is available only while this host exchange remains open. Abandoning it or losing host RAM permanently refuses fresh Protected QR challenges for this account history. Show QR remains ordinary signing.",
                 retry, abandon);
         return result.isPresent() && result.get() == retry
                 ? AntiExfilSigningFlow.PostRevealAction.RETRY_EXACT

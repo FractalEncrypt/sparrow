@@ -14,7 +14,8 @@ public final class AntiExfilSigningFlow {
     }
 
     public static Result execute(AntiExfilCoordinator coordinator, AntiExfilNetwork network, Exchange exchange) {
-        return execute(new CoordinatorSession(coordinator), network, exchange);
+        try { return execute(new CoordinatorSession(coordinator), network, exchange); }
+        finally { coordinator.close(); } // Also releases state on cancellation and unexpected UI failure.
     }
 
     static Result execute(Session session, AntiExfilNetwork network, Exchange exchange) {

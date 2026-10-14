@@ -195,6 +195,9 @@ public class HeadersController extends TransactionFormController implements Init
     private Label unverifiedWarning;
 
     @FXML
+    private Label protectedCompletionStatus;
+
+    @FXML
     private Field blockHeightField;
 
     @FXML
@@ -629,12 +632,9 @@ public class HeadersController extends TransactionFormController implements Init
             boolean hasAntiExfilKeystore = signingWallet != null && signingWallet.getKeystores().stream()
                     .anyMatch(keystore -> keystore.supportsAntiExfil()
                             && AntiExfilDeviceRegistry.capability(keystore) != null);
-            boolean antiExfilRequired = signingWallet != null && signingWallet.getKeystores().stream()
-                    .anyMatch(Keystore::isAntiExfilRequired);
-            antiExfilButton.setVisible(hasAntiExfilKeystore);
-            antiExfilButton.setText(antiExfilRequired ? "Protected QR (Required)" : "Protected QR");
-            antiExfilButton.setDefaultButton(antiExfilRequired);
-            signButton.setDefaultButton(!antiExfilRequired);
+            antiExfilButton.setText("Protected QR");
+            antiExfilButton.setDefaultButton(false);
+            signButton.setDefaultButton(true);
             updateSignedKeystores(signingWallet);
 
             int threshold = signingWallet.getDefaultPolicy().getNumSignaturesRequired();
@@ -1066,6 +1066,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     private void initializeSignButton(Wallet signingWallet) {
+        if(signingWallet == null) { signButton.setDisable(true); return; }
         Optional<Keystore> softwareKeystore = signingWallet.getKeystores().stream().filter(keystore -> keystore.getSource().equals(KeystoreSource.SW_SEED)).findAny();
         Optional<Keystore> usbKeystore = signingWallet.getKeystores().stream().filter(keystore -> keystore.getSource().equals(KeystoreSource.HW_USB) || keystore.getSource().equals(KeystoreSource.SW_WATCH)).findAny();
         Optional<Keystore> bip47Keystore = signingWallet.getKeystores().stream().filter(keystore -> keystore.getSource().equals(KeystoreSource.SW_PAYMENT_CODE)).findAny();
@@ -1278,37 +1279,38 @@ public class HeadersController extends TransactionFormController implements Init
                     .resolve("journals").resolve(keystoreDirectory + ".aexj");
             AntiExfilNetwork network = antiExfilNetwork();
 
-            AntiExfilCoordinator coordinator;
-            if(java.nio.file.Files.exists(sessionPath)) {
-                coordinator = AntiExfilCoordinator.load(sessionPath, journalPath, keystore);
-            } else {
-                try {
-                    coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network);
-                } catch(AntiExfilException exception) {
-                    if(exception.getCode() != AntiExfilException.Code.RETRY_CONFLICT) throw exception;
-                    Optional<ButtonType> acknowledgement = AppServices.showWarningDialog(
-                            "Selective-abort history exists",
-                            "This wallet key has an incomplete post-reveal signing history. Prefer retrying the retained session. "
-                                    + "Starting a fresh challenge can contribute to nonce-bias leakage. Continue only if you understand this risk.",
-                            ButtonType.NO, ButtonType.YES);
-                    if(acknowledgement.isEmpty() || acknowledgement.get() != ButtonType.YES) return;
-                    coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network, true);
+            // Legacy sessions are never restored. Their mere presence for this account
+            // conservatively blocks a new challenge without reading secret-bearing contents.
+            java.nio.file.Path legacyRoot = Storage.getStateDir().toPath().resolve("anti-exfil/sessions");
+            if(java.nio.file.Files.exists(legacyRoot)) {
+                try(var wallets = java.nio.file.Files.list(legacyRoot)) {
+                    for(java.nio.file.Path oldWallet : wallets.toList()) {
+                        java.nio.file.Path oldKey = oldWallet.resolve(keystoreDirectory);
+                        if(java.nio.file.Files.exists(oldKey)) {
+                            try(var files = java.nio.file.Files.list(oldKey)) {
+                                if(files.anyMatch(file -> file.getFileName().toString().endsWith(".aexs"))) {
+                                    throw new AntiExfilException(AntiExfilException.Code.RETRY_CONFLICT,
+                                            "Legacy secret-bearing session history exists for this account. It is preserved and cannot be resumed by the RAM-only design. Fresh Protected QR is conservatively refused. Show QR remains available for ordinary signing.");
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
+            try(AntiExfilCoordinator coordinator = AntiExfilCoordinator.create(sessionPath, journalPath, original, keystore, network)) {
             AntiExfilSigningFlow.Result result = AntiExfilSigningFlow.execute(coordinator, network,
                     new AntiExfilQrExchange(antiExfilButton.getScene().getWindow(),
                             keystore.getWalletModel().toDisplayString()));
             if(result.outcome() == AntiExfilSigningFlow.Outcome.COMPLETE && result.completion() != null) {
                 if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
                 PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);
-                AntiExfilProvenanceStore.record(wallet, storage, sessionPath, signed);
                 EventManager.get().post(new ViewPSBTEvent(antiExfilButton.getScene().getWindow(), null, null,
                         signed, headersForm.getPsbt(), TransactionView.HEADERS, null,
                         result.completion().getVerifiedSignatures()));
             }
+            }
         } catch(Exception exception) {
-            log.error("Anti-exfil signing failed", exception);
+            log.error("Anti-exfil signing stopped; transcript and exception payload logging suppressed");
             String detail = exception instanceof AntiExfilException antiExfilException
                     ? antiExfilException.getCode() + ": " + antiExfilException.getMessage()
                     : exception.getMessage();
@@ -1573,9 +1575,14 @@ public class HeadersController extends TransactionFormController implements Init
 
     void refreshProtectedCompletion() {
         TransactionData data = headersForm.getTransactionData();
+        if(data.getSigningWallet() != null) {
+            data.replaceVerifiedAntiExfilSignatures(AntiExfilPolicy.retainMatchingProofs(data.getSigningWallet(), data.getPsbt(), data.getVerifiedAntiExfilSignatures()));
+        }
+        protectedCompletionStatus.setText(data.getVerifiedAntiExfilSignatures().size()
+                + " signature(s) checked by anti-exfil in this window. Other signatures may be ordinary. This status is not saved. PSBT not finalized.");
         boolean pending = data.isProtectedFinalizationPending();
         boolean complete = pending && data.getPsbt().isSigned();
-        boolean permitted = pending && currentProvenanceStatus() == AntiExfilPolicy.ProvenanceStatus.PERMITTED;
+        boolean permitted = pending && data.getSigningWallet() != null && currentProvenanceStatus() == AntiExfilPolicy.ProvenanceStatus.PERMITTED;
         protectedCompletionBox.setVisible(complete && permitted);
         protectedSavePsbtButton.setDisable(!permitted);
         finalizeProtectedButton.setDisable(!complete || !permitted);
@@ -1587,7 +1594,7 @@ public class HeadersController extends TransactionFormController implements Init
                 signaturesForm.setVisible(true);
             }
             if(!permitted) {
-                provenanceWarning.setText("Read-only: open the signing wallet and provide every required protected-signing proof ("
+                provenanceWarning.setText("Read-only: ordinary signature/context validation failed ("
                         + currentProvenanceStatus() + ").");
                 provenanceWarning.setVisible(true);
                 signButton.setDisable(true);
@@ -1902,7 +1909,7 @@ public class HeadersController extends TransactionFormController implements Init
                 AntiExfilPolicy.evaluatePsbtEgress(headersForm.getTransactionData());
         if(status == AntiExfilPolicy.ProvenanceStatus.PERMITTED) return true;
         AppServices.showErrorDialog("PSBT export blocked",
-                "Sparrow cannot " + action + " because protected-signing provenance could not be verified ("
+                "Sparrow cannot " + action + " because signature/context validation failed ("
                         + status + ").");
         return false;
     }
@@ -1920,11 +1927,7 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     private void reloadVerifiedAntiExfilSignatures(Wallet signingWallet) {
-        if(headersForm.getPsbt() == null) return;
-        Storage storage = headersForm.getAvailableWallets().get(signingWallet);
-        if(storage == null) return;
-        headersForm.getTransactionData().addVerifiedAntiExfilSignatures(
-                AntiExfilProvenanceStore.resolve(signingWallet, storage, headersForm.getPsbt()));
+        // Verification status is RAM-only; never read legacy sessions or provenance indexes.
     }
 
     private void applyProvenanceQuarantine() {
@@ -1946,7 +1949,7 @@ public class HeadersController extends TransactionFormController implements Init
         savePsbtButton.setDisable(quarantined);
         payjoinButton.setDisable(quarantined);
         String message = quarantined
-                ? "Read-only: open the signing wallet and provide every required protected-signing proof (" + status + ")."
+                ? "Read-only: ordinary signature/context validation failed (" + status + ")."
                 : null;
         provenanceWarning.setText(message);
         provenanceWarning.setVisible(quarantined);

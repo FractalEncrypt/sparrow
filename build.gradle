@@ -648,3 +648,9 @@ extraJavaModuleInfo {
 kmpTorResourceFilterJar {
     keepTorCompilation("current","current")
 }
+
+// Retention checks use the same cached production logging/protobuf versions.
+dependencies {
+    testImplementation('ch.qos.logback:logback-classic:1.5.32')
+    testImplementation('com.google.protobuf:protobuf-java:4.34.0')
+}

@@ -161,8 +161,9 @@ class ProtectedCompletionGuiTest {
             f.data.replaceVerifiedAntiExfilSignatures(Set.of()); f.controller.refreshProtectedCompletion();
             EventManager.get().post(new KeystoreSignedEvent(wallet.getKeystores().get(0), f.data.getSignatureKeystoreMap()));
             assertTrue(f.data.hasProtectedSigningContext()); assertFalse(f.data.getPsbt().isFinalized());
-            assertEquals(AntiExfilPolicy.ProvenanceStatus.INVALID_PROVENANCE, AntiExfilPolicy.evaluatePsbtEgress(f.data));
-            assertFalse(f.node("protectedCompletionBox").isVisible()); return null;
+            assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED, AntiExfilPolicy.evaluatePsbtEgress(f.data));
+            assertTrue(f.node("protectedCompletionBox").isVisible());
+            assertTrue(((javafx.scene.control.Label)f.node("protectedCompletionStatus")).getText().startsWith("0 signature")); return null;
         });
     }
 
@@ -171,7 +172,7 @@ class ProtectedCompletionGuiTest {
         fx(() -> {
             f.data.setSigningWallet(null);
             assertFalse(f.node("protectedCompletionBox").isVisible());
-            assertEquals(AntiExfilPolicy.ProvenanceStatus.POLICY_CONTEXT_UNAVAILABLE, AntiExfilPolicy.evaluatePsbtEgress(f.data));
+            assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED, AntiExfilPolicy.evaluatePsbtEgress(f.data));
             f.data.replaceVerifiedAntiExfilSignatures(proofs); f.data.setSigningWallet(wallet);
             assertTrue(f.node("protectedCompletionBox").isVisible()); assertFalse(f.data.getPsbt().isFinalized()); return null;
         });
@@ -514,7 +515,7 @@ class ProtectedCompletionGuiTest {
             assertArrayEquals(menuPayload,Files.readAllBytes(f.controller.exportFile.toPath()));
             assertArrayEquals(signed,menuPayload); assertFalse(new PSBT(menuPayload,false).isFinalized());
             f.data.replaceVerifiedAntiExfilSignatures(Set.of());
-            assertEquals(AntiExfilPolicy.ProvenanceStatus.INVALID_PROVENANCE,AntiExfilPolicy.evaluatePsbtEgress(f.data));
+            assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,AntiExfilPolicy.evaluatePsbtEgress(f.data));
             return null;
         });
     }

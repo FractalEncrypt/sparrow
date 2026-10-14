@@ -123,6 +123,7 @@ class AntiExfilProtectedQrEgressRegressionTest {
         assertTrue(eventErrors.isEmpty(), eventErrors.toString());
     }
 
+    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
     @Test void protectedQrRefusesQuarantinedPsbt() throws Exception {
         Fixture f = boundTab(AntiExfilKeystorePolicy.REQUIRED);
         fx(() -> {

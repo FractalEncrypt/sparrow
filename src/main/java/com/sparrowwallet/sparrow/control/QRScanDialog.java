@@ -457,6 +457,9 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                 }
                 return new Result(ur);
             }
+            if("x-btc-anti-exfil".equals(ur.getType())) {
+                return new Result(new URException("This anti-exfil reply has no active host exchange. Start Protected QR explicitly; a QR cannot create or restore RAM-only host state."));
+            }
             try {
                 RegistryType urRegistryType = ur.getRegistryType();
 

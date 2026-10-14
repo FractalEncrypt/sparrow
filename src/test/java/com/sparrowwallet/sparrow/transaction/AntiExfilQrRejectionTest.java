@@ -23,7 +23,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real QR result decoding, signing flow and durable coordinator, without camera/dialog execution. */
+/** Real QR result decoding, signing flow and RAM-only coordinator, without camera/dialog execution. */
 class AntiExfilQrRejectionTest {
     @TempDir Path temporary;
     private JsonObject vector;
@@ -67,9 +67,9 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(scan(wrongNetwork(hex("message_2_hex"))));
         assertCode(AntiExfilException.Code.TRANSACTION_MISMATCH, exchange);
         assertEquals(List.of(AntiExfilStage.HOST_COMMIT), exchange.stages);
-        assertEquals(AntiExfilCoordinator.Phase.COMMITMENTS_CREATED, reload().getStatus().getPhase());
+        assertEquals(AntiExfilCoordinator.Phase.CLOSED, reload().getStatus().getPhase());
         assertOneEvent(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED);
-        assertEquals(AntiExfilException.Code.RETRY_CONFLICT, assertThrows(AntiExfilException.class,
+        assertEquals(AntiExfilException.Code.STATE_INVALID, assertThrows(AntiExfilException.class,
                 () -> reload().acceptOpenings(hex("message_2_hex"))).getCode());
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, signer.getAntiExfilPolicy());
     }
@@ -81,7 +81,7 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(scan(wrongNetwork(hex("message_4_hex"))));
         assertCode(AntiExfilException.Code.TRANSACTION_MISMATCH, exchange);
         assertEquals(List.of(AntiExfilStage.HOST_COMMIT, AntiExfilStage.HOST_REVEAL), exchange.stages);
-        assertEquals(AntiExfilCoordinator.Phase.OPENINGS_ACCEPTED, reload().getStatus().getPhase());
+        assertEquals(AntiExfilCoordinator.Phase.CLOSED, reload().getStatus().getPhase());
         assertOneEvent(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED);
         assertThrows(AntiExfilException.class, () -> reload().getCompletedResult());
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, signer.getAntiExfilPolicy());
@@ -113,7 +113,8 @@ class AntiExfilQrRejectionTest {
         assertCode(AntiExfilException.Code.WRONG_STAGE, exchange);
         assertTrue(events().isEmpty());
         assertEquals(List.of(AntiExfilStage.HOST_COMMIT), exchange.stages);
-        assertArrayEquals(hex("message_3_hex"), reload().acceptOpenings(hex("message_2_hex")));
+        assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
+        assertFalse(java.nio.file.Files.exists(session));
     }
 
     @Test
@@ -122,9 +123,9 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(scan(hex("message_2_hex")));
         exchange.scans.add(scan(hex("message_2_hex")));
         assertCode(AntiExfilException.Code.WRONG_STAGE, exchange);
-        assertTrue(events().isEmpty());
-        assertEquals(AntiExfilCoordinator.Phase.OPENINGS_ACCEPTED, reload().getStatus().getPhase());
-        assertFalse(reload().complete(hex("message_4_hex")).isBroadcast());
+        assertEquals("PENDING_REVEAL", events().getFirst().getReason());
+        assertEquals(AntiExfilCoordinator.Phase.CLOSED, reload().getStatus().getPhase());
+        assertThrows(AntiExfilException.class, () -> reload().complete(hex("message_4_hex")));
     }
 
     @Test
@@ -133,7 +134,8 @@ class AntiExfilQrRejectionTest {
         exchange.displayResults.add(false);
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
         assertTrue(events().isEmpty());
-        assertArrayEquals(hex("message_3_hex"), reload().acceptOpenings(hex("message_2_hex")));
+        assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
+        assertFalse(java.nio.file.Files.exists(session));
     }
 
     @Test
@@ -143,7 +145,8 @@ class AntiExfilQrRejectionTest {
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
         assertTrue(exchange.transportErrors.isEmpty());
         assertTrue(events().isEmpty());
-        assertArrayEquals(hex("message_3_hex"), reload().acceptOpenings(hex("message_2_hex")));
+        assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
+        assertFalse(java.nio.file.Files.exists(session));
     }
 
     @Test
@@ -153,7 +156,8 @@ class AntiExfilQrRejectionTest {
         assertEquals(AntiExfilSigningFlow.Outcome.CANCELLED_BEFORE_REVEAL, execute(exchange).outcome());
         assertEquals(List.of("camera unavailable"), exchange.transportErrors);
         assertTrue(events().isEmpty());
-        assertArrayEquals(hex("message_3_hex"), reload().acceptOpenings(hex("message_2_hex")));
+        assertThrows(AntiExfilException.class, () -> reload().acceptOpenings(hex("message_2_hex")));
+        assertFalse(java.nio.file.Files.exists(session));
     }
 
     @Test
@@ -175,7 +179,7 @@ class AntiExfilQrRejectionTest {
         var result = execute(exchange);
         assertEquals(AntiExfilSigningFlow.Outcome.COMPLETE, result.outcome());
         assertArrayEquals(exchange.displayed.get(1), exchange.displayed.get(2));
-        assertTrue(events().isEmpty());
+        assertEquals(List.of("PENDING_REVEAL", "VERIFIED_COMPLETE"), events().stream().map(AntiExfilAbortJournal.AbortEvent::getReason).toList());
         assertFalse(result.completion().isBroadcast());
     }
 
@@ -187,7 +191,7 @@ class AntiExfilQrRejectionTest {
         exchange.actions.add(AntiExfilSigningFlow.PostRevealAction.ABANDON);
         assertEquals(AntiExfilSigningFlow.Outcome.ABORTED_AFTER_REVEAL, execute(exchange).outcome());
         assertOneEvent(AntiExfilCoordinator.AbortReason.TRANSPORT_FAILED);
-        assertEquals(AntiExfilCoordinator.Phase.OPENINGS_ACCEPTED, reload().getStatus().getPhase());
+        assertEquals(AntiExfilCoordinator.Phase.CLOSED, reload().getStatus().getPhase());
     }
 
     @Test
@@ -212,7 +216,7 @@ class AntiExfilQrRejectionTest {
         exchange.scans.add(scan(wrongContext));
         assertCode(AntiExfilException.Code.TRANSACTION_MISMATCH, exchange);
         assertOneEvent(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED);
-        assertEquals(AntiExfilException.Code.RETRY_CONFLICT, assertThrows(AntiExfilException.class,
+        assertEquals(AntiExfilException.Code.STATE_INVALID, assertThrows(AntiExfilException.class,
                 () -> reload().acceptOpenings(hex("message_2_hex"))).getCode());
     }
 
@@ -225,21 +229,23 @@ class AntiExfilQrRejectionTest {
         assertEquals(AntiExfilSigningFlow.Outcome.COMPLETE, result.outcome());
         assertEquals(1, result.completion().getVerifiedSignatures().size());
         assertFalse(result.completion().isBroadcast());
-        assertTrue(events().isEmpty());
-        assertArrayEquals(result.completion().getSignedPsbt(), reload().getCompletedResult().getSignedPsbt());
+        assertEquals(List.of("PENDING_REVEAL", "VERIFIED_COMPLETE"), events().stream().map(AntiExfilAbortJournal.AbortEvent::getReason).toList());
+        assertThrows(AntiExfilException.class, () -> AntiExfilCoordinator.load(session, journal, signer));
+        assertFalse(java.nio.file.Files.exists(session));
         assertEquals(result.completion().getVerifiedSignatures(), reload().getCompletedResult().getVerifiedSignatures());
         assertEquals(AntiExfilKeystorePolicy.REQUIRED, signer.getAntiExfilPolicy());
     }
 
     private byte[] hex(String field) { return Utils.hexToBytes(vector.get(field).getAsString()); }
-    private AntiExfilCoordinator reload() { return AntiExfilCoordinator.load(session, journal, signer); }
+    private AntiExfilCoordinator reload() { return coordinator; }
     private List<AntiExfilAbortJournal.AbortEvent> events() {
         return new AntiExfilAbortJournal(journal, AntiExfilCoordinator.getWalletKeyIdentity(signer)).getEvents();
     }
     private void assertOneEvent(AntiExfilCoordinator.AbortReason reason) {
         var events = events();
-        assertEquals(1, events.size());
-        assertEquals(reason.name(), events.getFirst().getReason());
+        String expected = coordinator.getStatus().getPhase() == AntiExfilCoordinator.Phase.CLOSED
+                && events.size() == 1 ? "PRE_REVEAL_REJECTED" : reason.name();
+        assertEquals(expected, events.getLast().getReason());
         assertArrayEquals(coordinator.getStatus().getSessionId(), events.getFirst().getSessionId());
         assertArrayEquals(coordinator.getStatus().getPsbtDigest(), events.getFirst().getPsbtDigest());
     }
