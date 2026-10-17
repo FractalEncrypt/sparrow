@@ -3,4 +3,4 @@
 	url = https://github.com/FractalEncrypt/drongo.git
 [submodule "lark"]
 	path = lark
-	url = ../../sparrowwallet/lark.git
+	url = https://github.com/FractalEncrypt/lark.git
