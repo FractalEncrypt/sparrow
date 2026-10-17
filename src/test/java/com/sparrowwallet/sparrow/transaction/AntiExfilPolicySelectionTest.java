@@ -133,16 +133,6 @@ class AntiExfilPolicySelectionTest {
         assertArrayEquals(Utils.hexToBytes(vector.get("protected_signature_a_compact").getAsString()),
                 proofA.getCompactSignature());
 
-        Wallet onlyAPrivate = wallet.copy();
-        onlyAPrivate.getKeystores().get(1).setSeed(null);
-        onlyAPrivate.getKeystores().get(1).setMasterPrivateExtendedKey(null);
-        assertTrue(HeadersController.violatesRequiredSoftwareSigning(wallet, onlyAPrivate,
-                new PSBT(original, false)));
-        requiredA.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
-        assertFalse(HeadersController.violatesRequiredSoftwareSigning(wallet, onlyAPrivate,
-                new PSBT(original, false)));
-        requiredA.setAntiExfilPolicy(AntiExfilKeystorePolicy.REQUIRED);
-
         assertEquals(AntiExfilPolicy.ProvenanceStatus.REQUIRED_PROOF_MISSING,
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, signed, Set.of(proofA)));
 

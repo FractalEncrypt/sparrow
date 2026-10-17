@@ -1369,13 +1369,6 @@ public class HeadersController extends TransactionFormController implements Init
                     keystore.setMasterPrivateExtendedKey(null);
                 });
                 Keystore original = walletCopy.getKeystores().get(optIndex.getAsInt());
-                if(original.isAntiExfilRequired()
-                        && headersForm.getSigningWallet().getSigningKeystores(headersForm.getPsbt()).contains(
-                        headersForm.getSigningWallet().getKeystores().get(optIndex.getAsInt()))) {
-                    showErrorDialog("Protected signing required",
-                            "This keystore requires the Protected QR signing action and cannot be signed from a scanned seed.");
-                    return;
-                }
                 Keystore replacement = Keystore.fromSeed(seed, walletCopy.getPolicyType(), original.getKeyDerivation().getDerivation());
                 walletCopy.getKeystores().set(optIndex.getAsInt(), replacement);
                 signUnencryptedKeystores(walletCopy);
@@ -1478,11 +1471,6 @@ public class HeadersController extends TransactionFormController implements Init
 
     private void signUnencryptedKeystores(Wallet unencryptedWallet) {
         try {
-            if(violatesRequiredSoftwareSigning(headersForm.getSigningWallet(), unencryptedWallet, headersForm.getPsbt())) {
-                showErrorDialog("Protected signing required",
-                        "A participating private keystore requires the Protected QR signing action.");
-                return;
-            }
             Map<PSBTInput, WalletNode> signingNodes = unencryptedWallet.getSigningNodes(headersForm.getPsbt());
             List<SilentPayment> silentPayments = unencryptedWallet.computeSilentPaymentOutputs(headersForm.getPsbt(), signingNodes);
             if(!silentPayments.isEmpty()) {
@@ -1978,19 +1966,6 @@ public class HeadersController extends TransactionFormController implements Init
                                           AntiExfilPolicy.ProvenanceStatus status) {
         return transactionData.getPsbt() == null
                 || status != AntiExfilPolicy.ProvenanceStatus.PERMITTED;
-    }
-
-    static boolean violatesRequiredSoftwareSigning(Wallet policyWallet, Wallet unencryptedWallet, PSBT psbt) {
-        if(policyWallet == null || unencryptedWallet == null || psbt == null) return false;
-        Set<String> requiredIdentities = policyWallet.getSigningKeystores(psbt).stream()
-                .filter(Keystore::isAntiExfilRequired)
-                .map(keystore -> Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(keystore)))
-                .collect(Collectors.toSet());
-        return unencryptedWallet.getKeystores().stream()
-                .filter(Keystore::hasPrivateKey)
-                .filter(keystore -> keystore.getExtendedPublicKey() != null && keystore.getKeyDerivation() != null)
-                .map(keystore -> Utils.bytesToHex(AntiExfilCoordinator.getWalletKeyIdentity(keystore)))
-                .anyMatch(requiredIdentities::contains);
     }
 
     public void showTransaction(ActionEvent event) {

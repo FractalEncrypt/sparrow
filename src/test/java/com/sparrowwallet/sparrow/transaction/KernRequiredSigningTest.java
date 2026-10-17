@@ -142,21 +142,6 @@ class KernRequiredSigningTest {
                 AntiExfilPolicy.evaluateSignatureProvenance(wallet, new PSBT(hex("signed_psbt_hex"), false), Set.of()));
     }
 
-    @org.junit.jupiter.api.Disabled("Historical Required/durable provenance guarantee intentionally retired; see RAM lifecycle and ordinary validation replacement tests")
-    @Test
-    void requiredKernBlocksSoftwareFallbackWhileOptionalStillWorks() throws Exception {
-        // Private material comes only from the repository's public software test vector.
-        Wallet software = wallet.copy();
-        Keystore privateSigner = Keystore.fromSeed(new DeterministicSeed(
-                vector.getAsJsonObject("signer_a").get("mnemonic").getAsString(), "", 0, DeterministicSeed.Type.BIP39),
-                PolicyType.MULTI_HD, KeyDerivation.parsePath(vector.getAsJsonObject("signer_a").get("account_derivation").getAsString()));
-        software.getKeystores().set(0, privateSigner);
-        assertTrue(HeadersController.violatesRequiredSoftwareSigning(wallet, software, new PSBT(original, false)));
-        kern.setAntiExfilPolicy(AntiExfilKeystorePolicy.OPTIONAL);
-        assertFalse(HeadersController.violatesRequiredSoftwareSigning(wallet, software, new PSBT(original, false)));
-        assertEquals(AntiExfilPolicy.ProvenanceStatus.PERMITTED,
-                AntiExfilPolicy.evaluateSignatureProvenance(wallet, new PSBT(hex("signed_psbt_hex"), false), Set.of()));
-    }
 
     private byte[] hex(String field) { return Utils.hexToBytes(vector.get(field).getAsString()); }
 
